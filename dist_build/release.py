@@ -85,7 +85,7 @@ def main():
     # 5. 전체 패키지 zip
     assets = [app_zip]
     if "--full" in flags:
-        full = os.path.join(OUT, f"골조거더보_v{ver}_전체.zip")
+        full = os.path.join(OUT, f"girder-tool_v{ver}_full.zip")  # GitHub 자산명은 한글이 지워지므로 영문
         zipdir(PKG, full, prefix="골조거더보/")
         print(f"전체 패키지 {os.path.getsize(full)/1e6:.0f} MB → {full}")
         assets.append(full)

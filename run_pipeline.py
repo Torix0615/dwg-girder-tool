@@ -54,6 +54,7 @@ def step(name, cmd):
 
 
 def main():
+    print(f"골조·거더·보 생성 v{APP_VER} | 입력: {os.path.basename(src)}", flush=True)
     if not os.path.exists(src):
         raise SystemExit(f"입력 파일 없음: {src}")
     os.makedirs(work, exist_ok=True); os.makedirs(outdir, exist_ok=True)
