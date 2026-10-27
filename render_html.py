@@ -79,27 +79,36 @@ def render(segs, style, width_px=6400, texts=None, bbox=None):
     return base64.b64encode(buf.getvalue()).decode(), (x0, y0, x1, y1)
 
 
-FLOORS = ["B1", "B2", "B3", "B4", "B5", "B6"]
+import re as _re
+FLOORS = [b.name[:-3] for b in doc.blocks if b.name.endswith("_골조")]
+def _bbox_center(fl):
+    xs = []; ys = []
+    for e in doc.blocks[f"{fl}_골조"]:
+        if e.dxftype() == "LINE":
+            xs += [e.dxf.start.x, e.dxf.end.x]; ys += [e.dxf.start.y, e.dxf.end.y]
+    return ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2) if xs else (0.0, 0.0)
+_cent = {fl: _bbox_center(fl) for fl in FLOORS}
+_ax = 0 if (max(c[0] for c in _cent.values()) - min(c[0] for c in _cent.values())) >= (max(c[1] for c in _cent.values()) - min(c[1] for c in _cent.values())) else 1
+FLOORS.sort(key=lambda fl: _cent[fl][_ax], reverse=True)  # 층이 늘어선 축을 따라 위층부터
 pages = {"1": [], "2": []}
 counts = {}
 for fl in FLOORS:
     blk = doc.blocks[f"{fl}_골조"]
     segs, texts = block_segments(blk, [L_GOLF, L_CEN, L_OPEN, L_LOW, L_DONG, L_G, L_B])
     counts[fl] = {k: len(v) for k, v in segs.items()}
-    g = segs[L_GOLF]
+    g = segs[L_GOLF] if len(segs[L_GOLF]) else segs[L_LOW]
+    if not len(g):
+        continue
     bbg = (g[:, [0, 2]].min(), g[:, [1, 3]].min(), g[:, [0, 2]].max(), g[:, [1, 3]].max())
-    png1, bb = render({k: segs[k] for k in STYLE1}, STYLE1, texts=texts, bbox=bbg)
-    pages["1"].append((fl, png1, bb))
+    if len(segs[L_GOLF]):
+        png1, bb = render({k: segs[k] for k in STYLE1}, STYLE1, texts=texts, bbox=bbg)
+        pages["1"].append((fl, png1, bb))
+    else:
+        bb = bbg
     if len(segs[L_G]):
         png2, bb2 = render({k: segs[k] for k in STYLE2}, STYLE2, bbox=bb)
         pages["2"].append((fl, png2, bb2))
     print(fl, counts[fl], f"{time.time()-t0:.0f}s", flush=True)
-if "1F_골조" in doc.blocks:
-    segs, _ = block_segments(doc.blocks["1F_골조"], [L_LOW, L_DONG, L_G, L_B])
-    g = segs[L_LOW]
-    png2, bb2 = render(segs, STYLE2, bbox=(g[:, [0, 2]].min(), g[:, [1, 3]].min(), g[:, [0, 2]].max(), g[:, [1, 3]].max()))
-    pages["2"].insert(0, ("1F", png2, bb2))
-    counts["1F"] = {k: len(v) for k, v in segs.items()}
 
 CSS = """
 *{box-sizing:border-box} body{margin:0;font-family:'Malgun Gothic',sans-serif;background:#f3f4f6;color:#222}
@@ -131,9 +140,9 @@ def build(title, legend, items, note, fn, layers):
 
 
 build("1단계 골조 추출 — 층별 전체 도면", [("골조(벽체·기둥)", "#8a6d00"), ("중심선", "#c00000"), ("OPEN", "#303030")], pages["1"],
-      "원본 2A-04-001 지하주차장 평면도에서 노랑(CON·COL) 골조, 붉은 중심선(CEN·CEN-1·CEN-PARK), OPEN 레이어만 추출. 이미지를 클릭하면 원본 크기(스크롤)로 전환. 2026-10-27 생성.",
+      "원본 평면도에서 노랑 골조(벽체·기둥), 일점쇄선 중심선, OPEN(X 표시)만 색·선종류 기준으로 추출. 이미지를 클릭하면 원본 크기(스크롤)로 전환.",
       os.path.join(outdir, "1단계_골조추출_층별도면.html"), list(STYLE1))
 build("2단계 거더·보 — 층별 전체 도면", [("GIRDER", "#107010"), ("BEAM", "#0060e0"), ("하부 골조(아래층 기둥·벽)", "#b060b0"), ("동 구역", "#2040e0"), ("자기 층 골조", "#d8c878")], pages["2"],
-      "N층 도면의 거더·보는 아래층(N+1) 기둥·벽 위에 그려짐(1F=B1 기둥, B6 없음). 거더 폭 X 400·Y 500, 보 폭 400 의 2중선. 이미지를 클릭하면 원본 크기(스크롤)로 전환. 2026-10-27 생성.",
+      "각 층 도면의 거더·보는 바로 아래층 기둥·벽 위에 그려짐(최하층은 거더 없음). 거더 폭 X 400·Y 500, 보 폭 400 의 2중선. 이미지를 클릭하면 원본 크기(스크롤)로 전환.",
       os.path.join(outdir, "2단계_거더보_층별도면.html"), [L_LOW, L_DONG, L_G, L_B])
 print(f"done {time.time()-t0:.0f}s")

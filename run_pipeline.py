@@ -72,6 +72,11 @@ def main():
     elif not src.lower().endswith(".dxf"):
         raise SystemExit("입력은 .dwg 또는 .dxf 여야 함")
     py = [sys.executable]
+    # 0.5 외부참조(XREF) 결합: 원본 폴더(및 그 XREF 하위 폴더)에서 참조 파일을 찾아 심는다. 없으면 건너뜀
+    bound = os.path.join(work, base + "_bound.dxf")
+    step("외부참조(XREF) 결합", py + ["xref_bind.py", dxf, bound, "--dirs", os.path.dirname(src), "--work", os.path.join(work, "xref_tmp")])
+    if os.path.exists(bound):
+        dxf = bound
     d1, cand, model, res, final = (os.path.join(work, f) for f in ("d1.pkl", "s1_cand.pkl", "s2_model.pkl", "s2_result.pkl", "최종.dxf"))
     step("원본 전개(블록 재귀)", py + ["dump.py", dxf, d1, "--msp"])
     step("1단계 골조·중심선·OPEN 선별", py + ["stage1_select.py", d1, cand] + cfg_args)

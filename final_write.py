@@ -1,4 +1,4 @@
-"""최종 DXF(원본 미포함, ezdxf R2010 신규 문서): 층별 블록 B1~B6_골조(1단계 골조/중심선/OPEN + 2단계 하부골조/GIRDER/BEAM/동 구역) + 1F_골조.
+"""최종 DXF(원본 미포함, ezdxf R2010 신규 문서): 층별 블록 <층>_골조(1단계 골조/기둥/중심선/OPEN + 2단계 하부골조/GIRDER/BEAM/동 구역). 층 위치는 원본 그대로.
 python final_write.py out/s1_cand.pkl out/s2_model.pkl out/s2_result.pkl out/최종.dxf
 """
 import sys, math, time, pickle
@@ -15,11 +15,10 @@ GW_X, GW_Y, BW = float(CFG["거더폭_X"]), float(CFG["거더폭_Y"]), float(CFG
 OL = CFG["출력_레이어"]
 L_GOLF, L_CEN, L_OPEN = OL["골조"], OL["중심선"], OL["OPEN"]
 L_G, L_B, L_LOW, L_DONG = OL["거더"], OL["보"], OL["하부골조"], OL["동구역"]
-GOLF_L = set(CFG["골조_레이어"]) | {CFG["기둥_레이어"]}; CEN_L = set(CFG["중심선_레이어"])
-
-C = pickle.load(open(cand_p, "rb")); cand = C["cand"]; FY = C["FY"]; H = C["H"]
+C = pickle.load(open(cand_p, "rb")); cand = C["cand"]
 model = pickle.load(open(model_p, "rb"))["model"]
-result = pickle.load(open(result_p, "rb"))["result"]
+RES = pickle.load(open(result_p, "rb")); result = RES["result"]; floors = RES["floors"]
+SHORT = {f["id"]: f["short"] for f in floors}; ANCHOR = {f["id"]: f["anchor"] for f in floors}
 t0 = time.time()
 doc = ezdxf.new("R2010", setup=True)
 doc.header["$INSUNITS"] = 4  # mm
@@ -99,48 +98,46 @@ def is_xish(s):
 
 
 def add_stage2(blk, N, R, shift):
+    """shift=(dx,dy): 지지층 좌표 → N 층 위치"""
     k = R["support"]
     m = model[k]
+    dx, dy = shift
     n_low = 0
     for c in m["cols"]:
-        blk.add_lwpolyline([(p[0], p[1] + shift) for p in c["poly"]], close=True, dxfattribs={"layer": L_LOW}); n_low += 1
+        blk.add_lwpolyline([(p[0] + dx, p[1] + dy) for p in c["poly"]], close=True, dxfattribs={"layer": L_LOW}); n_low += 1
     for s in m["con"]:
-        blk.add_line((s[0], s[1] + shift), (s[2], s[3] + shift), dxfattribs={"layer": L_LOW}); n_low += 1
-    col_polys = [Polygon([tuple(v) for v in c["poly"]]) for c in m["cols"]]; col_tree = STRtree(col_polys)
-    G = E.to_segs(R["girders"]); B = E.to_segs(R["beams"])
-    ng = sum(double_lines(blk, [s], GW_X if is_xish(s) else GW_Y, L_G, col_polys, col_tree, shift) for s in G)
-    nb = double_lines(blk, B, BW, L_B, col_polys, col_tree, shift)
+        blk.add_line((s[0] + dx, s[1] + dy), (s[2] + dx, s[3] + dy), dxfattribs={"layer": L_LOW}); n_low += 1
+    col_polys = [Polygon([(v[0] + dx, v[1] + dy) for v in c["poly"]]) for c in m["cols"]]; col_tree = STRtree(col_polys)
+    off = np.array([dx, dy, dx, dy])
+    G = E.to_segs(R["girders"]) + off if R["girders"] else np.zeros((0, 4)); B = E.to_segs(R["beams"]) + off if R["beams"] else np.zeros((0, 4))
+    ng = sum(double_lines(blk, [s], GW_X if is_xish(s) else GW_Y, L_G, col_polys, col_tree, 0.0) for s in G)
+    nb = double_lines(blk, B, BW, L_B, col_polys, col_tree, 0.0)
     for dg in m.get("dong", []):
-        blk.add_lwpolyline([(x, y + shift) for x, y in dg.exterior.coords], close=True, dxfattribs={"layer": L_DONG})
+        blk.add_lwpolyline([(x + dx, y + dy) for x, y in dg.exterior.coords], close=True, dxfattribs={"layer": L_DONG})
     return n_low, ng, nb
 
 
 DX = float(CFG["출력_x이동"])  # 0 = 원본 좌표 그대로
-for N in sorted(cand):
-    bname = f"B{N}_골조"
+for f in floors:
+    N = f["id"]; bname = f"{f['short']}_골조"
     blk = doc.blocks.new(name=bname)
-    c = cand[N]
-    k1 = add_prims(blk, [p for p in c["golf"] if p["layer"] in GOLF_L], L_GOLF)
-    k2 = add_prims(blk, [p for p in c["cen"] if p["layer"] in CEN_L], L_CEN)
-    k3 = add_prims(blk, c["open"] + c["open_text"], L_OPEN)
+    k1 = k2 = k3 = 0
+    if N in cand:
+        c = cand[N]
+        k1 = add_prims(blk, c["golf"], L_GOLF)
+        for P in c.get("cols", []):  # 기둥 직사각형(4선 기둥도 폴리선으로)
+            blk.add_lwpolyline([(p[0], p[1]) for p in P[:4]], close=True, dxfattribs={"layer": L_GOLF})
+        k2 = add_prims(blk, c["cen"], L_CEN)
+        k3 = add_prims(blk, c["open"] + c["open_text"], L_OPEN)
     s2 = (0, 0, 0)
     if N in result:
         s2 = add_stage2(blk, N, result[N], result[N]["shift"])
     ins = msp.add_blockref(bname, (DX, 0.0), dxfattribs={"layer": L_GOLF})
     g = doc.groups.new(name=f"GRP_{bname}"); g.extend([ins])
+    sup = SHORT.get(result[N]["support"]) if N in result else None
+    ax, ay = ANCHOR[N]
+    msp.add_text(f"{f['short']} 골조" + (f" (거더·보는 {sup} 기둥 기준)" if sup else " (최하층, 거더 없음)" if N == floors[0]["id"] else ""),
+                 height=2500, dxfattribs={"layer": L_GOLF}).set_placement((DX + ax, ay - 6000))
     print(f"{bname}: 골조 {k1} 중심선 {k2} OPEN {k3} | 하부골조 {s2[0]} 거더선 {s2[1]} 보선 {s2[2]}")
-if 0 in result:
-    blk = doc.blocks.new(name="1F_골조")
-    s2 = add_stage2(blk, 0, result[0], H)  # B1 띠 바로 위
-    ins = msp.add_blockref("1F_골조", (DX, 0.0), dxfattribs={"layer": L_GOLF})
-    g = doc.groups.new(name="GRP_1F_골조"); g.extend([ins])
-    print(f"1F_골조(B1 기둥 기준, B1 띠 위): 하부골조 {s2[0]} 거더선 {s2[1]} 보선 {s2[2]}")
-# 층 라벨
-NMAX = max(cand)
-for N in sorted(cand):
-    msp.add_text(f"B{N} 골조 (거더·보는 B{N+1} 기둥 기준)" if N < NMAX else f"B{N} 골조 (최하층, 거더 없음)", height=8000,
-                 dxfattribs={"layer": L_GOLF}).set_placement((DX + 60000, FY[N] - 20000))
-if 0 in result:
-    msp.add_text("1F 바닥 거더·보 (B1 기둥 기준)", height=8000, dxfattribs={"layer": L_GOLF}).set_placement((DX + 60000, FY[1] + H - 20000))
 doc.saveas(out_p)
 print(f"saved {out_p} {time.time()-t0:.0f}s")

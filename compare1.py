@@ -7,8 +7,8 @@ from geom import to_segments, match_metrics, find_offset
 
 ap = argparse.ArgumentParser()
 ap.add_argument("cand"); ap.add_argument("ref")
-ap.add_argument("--golf-layers", default="CON,COL")
-ap.add_argument("--cen-layers", default="CEN,CEN-1,CEN-PARK")
+ap.add_argument("--golf-layers", default="", help="비우면 전체")
+ap.add_argument("--cen-layers", default="", help="비우면 전체")
 ap.add_argument("--report")
 ap.add_argument("--variants", action="store_true", help="골조 레이어 조합별 점수 비교")
 a = ap.parse_args()
@@ -20,8 +20,8 @@ REF_B = {1: "지1 b", 2: "지2 b", 3: "wl3 b", 4: "지3 b", 5: "지5 b", 6: "지
 
 
 def by_layers(prims, layers):
-    s = set(layers)
-    return [p for p in prims if p["layer"] in s]
+    s = set(l for l in layers if l)
+    return [p for p in prims if not s or p["layer"] in s]
 
 
 def fmt(m):
@@ -34,21 +34,23 @@ def out(s=""):
     print(s); lines.append(s)
 
 tot = {}
-for n in sorted(cand):
+KEYS = {(-k if k < 0 else k): k for k in cand}  # 새 층 id(B5=-5) → 참조 번호 5
+for n in sorted(k for k in KEYS if k in REF_NAME):
+    fid = KEYS[n]
     ref = R["blocks"][REF_NAME[n]]
     ref_golf = to_segments([p for p in ref if p["layer"] == "----- (구조) 골조"])
     ref_cen = to_segments([p for p in ref if re.search(r"^CEN", p["layer"])])
     ref_open = to_segments([p for p in ref if p["layer"] == "OPEN"])
-    my_golf = to_segments(by_layers(cand[n]["golf"], a.golf_layers.split(",")))
+    my_golf = to_segments(by_layers(cand[fid]["golf"], a.golf_layers.split(",")))
     dx, dy, nx, ny = find_offset(ref_golf, my_golf)
     out(f"===== B{n}  참조블록 {REF_NAME[n]}  정렬 이동량 dx={dx:.1f} dy={dy:.1f} (표 {nx},{ny})")
     off = np.array([dx, dy, dx, dy])
     ref_golf = ref_golf + off; ref_cen = ref_cen + off; ref_open = ref_open + off
     mg = match_metrics(ref_golf, my_golf); out("  골조   " + fmt(mg))
     if a.variants:
-        layers = sorted({p["layer"] for p in cand[n]["golf"]})
+        layers = sorted({p["layer"] for p in cand[fid]["golf"]})
         for ly in layers:
-            segs = to_segments([p for p in cand[n]["golf"] if p["layer"] == ly])
+            segs = to_segments([p for p in cand[fid]["golf"] if p["layer"] == ly])
             if len(segs) == 0: continue
             m = match_metrics(ref_golf, segs)
             out(f"     레이어 {ly:14s} 내것 {m['my_n']:5d}개  이 레이어 선분 중 참조에 있는 비율 {m['seg_prec']:5.1f}% (길이 {m['len_prec']:5.1f}%)")
@@ -56,7 +58,7 @@ for n in sorted(cand):
         import collections
         from scipy.spatial import cKDTree
         from geom import norm_segs
-        prims = by_layers(cand[n]["golf"], a.golf_layers.split(","))
+        prims = by_layers(cand[fid]["golf"], a.golf_layers.split(","))
         t = cKDTree(norm_segs(ref_golf))
         miss = collections.Counter(); tot_c = collections.Counter()
         for p in prims:
@@ -75,9 +77,9 @@ for n in sorted(cand):
         if len(missing):
             L = np.hypot(missing[:, 2] - missing[:, 0], missing[:, 3] - missing[:, 1])
             out(f"     내게 없는 참조 골조 선분 {len(missing)}개, 길이 중앙값 {np.median(L):.0f}, 범위 x {missing[:,0].min():.0f}~{missing[:,0].max():.0f} y {missing[:,1].min():.0f}~{missing[:,1].max():.0f}")
-    my_cen = to_segments(by_layers(cand[n]["cen"], a.cen_layers.split(",")))
+    my_cen = to_segments(by_layers(cand[fid]["cen"], a.cen_layers.split(",")))
     mc = match_metrics(ref_cen, my_cen); out("  중심선 " + fmt(mc))
-    my_open = to_segments(cand[n]["open"])
+    my_open = to_segments(cand[fid]["open"])
     mo = match_metrics(ref_open, my_open); out("  OPEN   " + fmt(mo))
     tot[n] = {"golf": mg, "cen": mc, "open": mo, "dx": dx, "dy": dy}
 
