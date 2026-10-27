@@ -12,3 +12,9 @@ __pycache__/
 *.png
 *.html
 *.zip
+desktop/node_modules/
+desktop/release/
+!desktop/assets/*.png
+!desktop/renderer/*.html
+dist_build/secrets.json
+feedback/

@@ -3,6 +3,7 @@ python release.py <버전> "변경 1" "변경 2" ... [--notes-file=notes.txt] [-
   (PowerShell 에서 한글 인자가 깨지면 --notes-file 로. Bash 도구에서는 인자 직접 가능)
   --runtime : pkg/runtime 도 zip 으로 묶어 runtime-v<N> 릴리스(런타임 바뀐 때만)
   --full    : 처음 나눠줄 전체 패키지 zip(bat+app+runtime+사용법)도 만들어 릴리스에 첨부
+  --shell   : 데스크탑 앱(Electron) 설치본 GirderTool-Setup-<버전>.exe 도 빌드·첨부(desktop/ 코드가 바뀐 때만, ~170MB)
   --dry     : 파일만 만들고 gh/git 은 실행하지 않음
 동작: 소스 → pkg/app 복사·version.txt → app.zip → gh release(app-v<버전>) → latest.json·CHANGELOG 갱신 → git commit/push
 """
@@ -43,7 +44,12 @@ def main():
     if not notes:
         sys.exit("변경 내용(notes)이 없음: 인자 또는 --notes-file=파일 로 지정")
     dry = "--dry" in flags
-    repo = sh([GH, "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]).strip() if not dry else "OWNER/REPO"
+    try:
+        repo = sh([GH, "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]).strip()
+    except Exception as e:
+        if not dry:
+            raise
+        repo = "Torix0615/dwg-girder-tool"; print(f"(dry) gh 미사용: {e}")
     latest_p = os.path.join(SRC, "latest.json")
     latest = json.load(open(latest_p, encoding="utf-8")) if os.path.exists(latest_p) else {"notes": []}
     # 1. app 폴더 구성
@@ -55,6 +61,13 @@ def main():
     shutil.copy2(os.path.join(SRC, "config.json"), os.path.join(APP, "config.default.json"))
     open(os.path.join(APP, "version.txt"), "w", encoding="utf-8").write(ver)
     open(os.path.join(APP, "update_source.txt"), "w", encoding="utf-8").write(f"https://raw.githubusercontent.com/{repo}/main/latest.json")
+    sec_p = os.path.join(HERE, "secrets.json")  # 피드백 서버 주소(git 제외) → app/feedback_server.txt. 키는 pull_feedback 전용이라 앱에 넣지 않음
+    if os.path.exists(sec_p):
+        sec = json.load(open(sec_p, encoding="utf-8"))
+        if sec.get("feedback_url"):
+            open(os.path.join(APP, "feedback_server.txt"), "w", encoding="utf-8").write(sec["feedback_url"].strip() + "\n")
+    else:
+        print("경고: dist_build/secrets.json 없음 → 앱에서 피드백 전송 대신 파일 저장만 됨")
     # 2. 패키지 루트(bat·사용법·config)
     for f in os.listdir(TPL):
         shutil.copy2(os.path.join(TPL, f), os.path.join(PKG, f))
@@ -77,6 +90,27 @@ def main():
         if not dry:
             sh([GH, "release", "create", f"runtime-v{rt_ver}", rt_zip, "--title", f"runtime {rt_ver}", "--notes", "Python 3.14 embedded + ezdxf/shapely/scipy/numpy/matplotlib + dwg2dxf"])
     latest.setdefault("runtime_version", rt_ver)
+    # 4b. 데스크탑 셸(Electron 설치본): --shell 일 때만 빌드(엔진·런타임 포함 ~170MB). 설치된 앱은 창을 숨길 때 무인 설치
+    shell_exe = None
+    if "--shell" in flags:
+        desk = os.path.join(SRC, "desktop"); pj = os.path.join(desk, "package.json")
+        pkg = json.load(open(pj, encoding="utf-8")); pkg["version"] = ver
+        json.dump(pkg, open(pj, "w", encoding="utf-8"), ensure_ascii=False, indent=2); open(pj, "a", encoding="utf-8").write("\n")
+        print("electron-builder 빌드 중(수 분)…")
+        r = subprocess.run(["npm.cmd", "run", "dist"], cwd=desk, text=True, encoding="utf-8", errors="replace", capture_output=True)
+        print(r.stdout[-1500:])
+        if r.returncode != 0:
+            sys.exit("electron-builder 실패:\n" + r.stderr[-3000:])
+        shell_exe = os.path.join(desk, "release", f"GirderTool-Setup-{ver}.exe")
+        if not os.path.exists(shell_exe):
+            sys.exit(f"설치본이 없음: {shell_exe}")
+        import hashlib
+        sha = hashlib.sha256(open(shell_exe, "rb").read()).hexdigest()
+        latest["shell_version"] = ver
+        latest["shell_url"] = f"https://github.com/{repo}/releases/download/app-v{ver}/GirderTool-Setup-{ver}.exe"
+        latest["shell_sha256"] = sha
+        latest["shell_size"] = os.path.getsize(shell_exe)
+        print(f"설치본 {os.path.getsize(shell_exe)/1e6:.0f} MB sha256={sha[:12]}…")
     json.dump(latest, open(latest_p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     ch = os.path.join(SRC, "CHANGELOG.md")
     old = open(ch, encoding="utf-8").read() if os.path.exists(ch) else "# 변경 이력\n"
@@ -89,6 +123,8 @@ def main():
         zipdir(PKG, full, prefix="골조거더보/")
         print(f"전체 패키지 {os.path.getsize(full)/1e6:.0f} MB → {full}")
         assets.append(full)
+    if shell_exe:
+        assets.append(shell_exe)
     if dry:
         print("(dry) gh/git 생략"); return
     # 6. 릴리스 + 저장소 반영

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <title>골조·거더·보 생성기</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="titlebar">
+    <img src="../assets/tray.png" class="logo" alt="" />
+    <div class="title">골조·거더·보 생성기 <span id="verChip" class="chip"></span></div>
+    <div class="winbtns">
+      <button id="btnInfo" class="iconbtn" title="정보·설정">⚙</button>
+      <button id="btnPin" class="iconbtn" title="항상 위에">📌</button>
+      <button id="btnHide" class="iconbtn" title="트레이로 숨기기">✕</button>
+    </div>
+  </header>
+
+  <div id="updateBar" class="updatebar hidden">
+    <div class="ub-head">
+      <span id="ubMsg"></span>
+      <div class="ub-actions">
+        <button id="ubInstall" class="btn small hidden">지금 설치</button>
+        <button id="ubToggle" class="iconbtn" title="변경 내용">▾</button>
+      </div>
+    </div>
+    <div id="ubNotes" class="ub-notes hidden"></div>
+  </div>
+  <div id="prepBar" class="prepbar hidden"></div>
+
+  <!-- 작업이 하나도 없을 때 -->
+  <section id="empty" class="empty hidden">
+    <button id="btnStartEmpty" class="btn big">작업 시작</button>
+    <p class="hint">DWG 또는 DXF 도면 1개를 선택하면 골조·거더·보 DXF 가 만들어집니다.</p>
+  </section>
+
+  <!-- 작업이 있을 때: 왼쪽 목록 + 오른쪽 상세 -->
+  <section id="work" class="work hidden">
+    <aside class="side">
+      <ul id="jobList" class="joblist"></ul>
+      <button id="btnStart" class="btn wide">+ 작업 시작</button>
+    </aside>
+    <main id="detail" class="detail"></main>
+  </section>
+
+  <!-- 정보 패널 -->
+  <section id="info" class="info hidden">
+    <h3>정보</h3>
+    <div class="row gap">
+      <button id="btnUpdate" class="btn ghost small">업데이트 확인</button>
+      <span id="updMsg" class="msg"></span>
+    </div>
+    <div class="row gap"><button id="btnData" class="btn ghost small">데이터 폴더 열기</button></div>
+    <p class="hint" id="verInfo"></p>
+    <p class="hint">생성 규칙은 모든 도면에 공통으로 적용되는 내부 기본값을 씁니다. 전문가 피드백이 쌓이면 필요한 옵션이 이 화면에 추가됩니다.</p>
+    <div class="row"><button id="btnInfoClose" class="btn small">닫기</button></div>
+  </section>
+  <script src="app.js"></script>
+</body>
+</html>

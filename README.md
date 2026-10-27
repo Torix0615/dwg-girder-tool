@@ -10,13 +10,17 @@ DWG→DXF 변환: `..\libredwg\dwg2dxf.exe -y -o data\N.dxf <dwg>` (1번 4초, 2
 - 진단(10-27 저녁 보강): `<이름>_골조거더보_report.txt` 는 시작 직후 생성되어 단계마다 갱신되고, 어느 단계에서든 실패하면 원인(오류 출력·예외)을 기록. report 가 아예 없으면 run_pipeline 이 시작조차 못 한 것(bat 창 메시지 확인). bat 는 ASCII+CRLF, python 은 `C:\Python314\python.exe` 절대 경로(없으면 PATH 의 python).
 - 결과 DXF 는 원본 미포함·블록 7개(B1~B6_골조·1F_골조)·GROUP 이라 CAD 에서 블록 편집 또는 EXPLODE 후 수정 가능. 원본 위에 겹쳐 보려면 결과를 XREF/INSERT(0,0).
 
-## 배포(다른 사람에게 주기) + 자동 업데이트 + 피드백 — dist_build\
-- 패키지 구조 `골조거더보\` = `골조_거더보_생성.bat`(드래그 실행, 먼저 updater.py 호출) + `피드백_보내기.bat` + `사용법.txt` + `config.json`(사용자 값, 업데이트 시 보존) + `runtime\`(임베디드 Python 3.14 + ezdxf·shapely·scipy·numpy·matplotlib + dwg2dxf, 250MB, `python314._pth` 에 `..\app` 필수) + `app\`(스크립트·version.txt·update_source.txt·config.default.json).
-- 서버 = GitHub 공개 저장소(이 폴더가 git 저장소). `latest.json`(main 브랜치 raw) 에 app_version/app_url/runtime_version/runtime_url/notes. app.zip·runtime.zip 은 Releases 자산(app-v<버전>, runtime-v<N>).
-- 상대 PC 동작: bat 실행 → updater 가 latest.json 확인 → 새 버전이면 변경 내용 출력 후 app.zip 받아 app\ 교체(런타임은 runtime_new\ 에 풀고 bat 가 교체) → 파이프라인 실행. 오프라인이면 건너뜀. report 사본은 `logs\` 에 쌓여 피드백 zip 에 포함.
-- 피드백: 상대가 `피드백_보내기.bat` → 바탕화면 `골조거더보_피드백_날짜.zip`(내용·config·최근 report 10개) → 카톡/메일 → 이 채팅에 넣고 수정.
-- 새 버전 내기(이 PC, gh 로그인 필요): 소스 고친 뒤 `python dist_build\release.py 1.0.1 "변경 내용"` (PowerShell 은 한글 인자가 깨지므로 Bash 도구에서 실행하거나 `--notes-file=notes.txt`). 런타임 바뀌면 `--runtime`(build_runtime.py 재실행 후, runtime_version 올림), 처음 배포 전체 zip 은 `--full`. `--dry` 는 파일만 생성.
-- 검증 절차: dist_build\pkg 를 임시 폴더에 복사 → bat 에 DXF 드래그 → 결과 확인 → 버전 올려 release → 임시 폴더 재실행 시 "새 버전 발견 … 업데이트 완료" 확인.
+## 배포(다른 사람에게 주기) + 자동 업데이트 + 피드백 — desktop\ · dist_build\ · server**상대에게 주는 것 = 설치본 1개** `GirderTool-Setup-<버전>.exe`(Releases, 런타임 포함 ~170MB). 더블클릭 설치 → 트레이 상주 앱(항상 위 창, 최소 900×600).
+- 앱(desktop\, Electron 33 + electron-builder NSIS, 바닐라 HTML/JS): 빈 화면 "작업 시작" → 탐색기에서 도면 1개 → 왼쪽 작업 목록 / 오른쪽 진행률·"결과 DXF 다운로드"(최종 DXF 만) · 피드백(모든 도면 공통/이 도면만/모름 + 내용 → 전송, 전송 후 잠금). 설정 화면 없음(규칙값은 모든 도면 공통 내부 기본값, 전문가 피드백에 따라 옵션 추가). ⚙=업데이트 확인·버전·데이터 폴더.
+- 데이터 폴더 `%APPDATA%\GirderTool\` = app\(스크립트, 첫 실행 때 설치본 resources\engine 에서 복사) · runtime\(임베디드 Python+dwg2dxf, `python314._pth` 에 `..pp` 필수) · results\<작업>\(최종 DXF·report) · jobs.json · desktop.log · config.json.
+- 자동 업데이트 3층(lib/updater.cjs, 시작 5초 후·3시간마다, `latest.json` = GitHub raw, 반영 지연 최대 5분): app.zip(스크립트, 32KB) → 변경 내용 띄우고 즉시 교체(작업 중이면 끝난 뒤) / runtime.zip(드묾) / 셸 Setup.exe(shell_version·sha256) → 받아 두고 창이 숨겨지고 작업이 없을 때 무인 설치(/S) 후 `--hidden` 재기동(SyncNote 방식).
+- 피드백 서버(server\server.js, 의존성 0, Railway 프로젝트 `dwg-feedback` 볼륨 /data, 주소 `https://dwg-feedback-production.up.railway.app`): 업로드 `POST /api/feedback` 는 키 없음(IP당 시간당 10건·600MB 제한, 앱 배포물에 비밀값을 넣지 않기 위함), 목록·다운로드·삭제는 `x-key`(Railway 변수 FEEDBACK_KEY = `dist_build/secrets.json` feedback_key, git 제외). zip 내용 = 피드백.txt(구분·대상·내용) + files\(원본 DWG/DXF·결과 DXF·report) + config.json + logs + desktop_log.txt.
+- 이 PC 에서 가져오기: `python dist_build\pull_feedback.py` → `feedback\<id>\` + `feedback\INDEX.md`. 판별(공통 규칙 → 코드 반영 / 이 도면 전용 / 보류)·코드 갱신 절차는 `docs\FEEDBACK_LOOP.md`.
+- 새 버전 내기(이 PC, gh 로그인, Bash 도구에서 — PowerShell 은 한글 인자가 깨짐): 스크립트만 고치면 `python dist_build/release.py 1.1.1 "변경 내용"`(32KB, 상대는 다음 실행 때 자동), desktop\ 코드를 고치면 `--shell`(electron-builder 빌드 수 분, Setup.exe 첨부, 상대 PC 는 창 숨김 때 무인 설치), 런타임 바뀌면 build_runtime.py 후 `--runtime`, bat 패키지 전체 zip 은 `--full`, `--dry` 는 파일만.
+- 서버 배포: `server\` 에서 `railway up --detach`(이 폴더가 dwg-feedback 프로젝트에 링크됨). 변수 변경 후엔 redeploy.
+- 개발 실행·무GUI 검증: `desktop
+ode_modules\.bin\electron.cmd . --remote-debugging-port=9333` 후 CDP(Runtime.evaluate `window.girder.*`, Page.captureScreenshot). 설치본과 같은 userData 를 쓰므로 설치본 테스트 전엔 dev 앱 종료.
+- (구) bat 패키지 `골조거더보\`(dist_build	emplate, `--full` zip)도 유지: updater.py·feedback.py 는 앱과 공용.
 
 ## 실행 순서(PowerShell, 폴더 `C:\Users\taeju\Tools\DwgRework`, `$env:PYTHONUTF8=1`)
 ```

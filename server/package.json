@@ -1,0 +1,9 @@
+{
+  "name": "dwg-feedback-server",
+  "private": true,
+  "version": "1.0.0",
+  "description": "골조·거더·보 생성기 피드백(원본·결과·내용 zip) 수신 서버 — 의존성 없음",
+  "main": "server.js",
+  "engines": { "node": ">=20" },
+  "scripts": { "start": "node server.js" }
+}
