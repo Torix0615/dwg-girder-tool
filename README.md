@@ -10,6 +10,14 @@ DWG→DXF 변환: `..\libredwg\dwg2dxf.exe -y -o data\N.dxf <dwg>` (1번 4초, 2
 - 진단(10-27 저녁 보강): `<이름>_골조거더보_report.txt` 는 시작 직후 생성되어 단계마다 갱신되고, 어느 단계에서든 실패하면 원인(오류 출력·예외)을 기록. report 가 아예 없으면 run_pipeline 이 시작조차 못 한 것(bat 창 메시지 확인). bat 는 ASCII+CRLF, python 은 `C:\Python314\python.exe` 절대 경로(없으면 PATH 의 python).
 - 결과 DXF 는 원본 미포함·블록 7개(B1~B6_골조·1F_골조)·GROUP 이라 CAD 에서 블록 편집 또는 EXPLODE 후 수정 가능. 원본 위에 겹쳐 보려면 결과를 XREF/INSERT(0,0).
 
+## 배포(다른 사람에게 주기) + 자동 업데이트 + 피드백 — dist_build\
+- 패키지 구조 `골조거더보\` = `골조_거더보_생성.bat`(드래그 실행, 먼저 updater.py 호출) + `피드백_보내기.bat` + `사용법.txt` + `config.json`(사용자 값, 업데이트 시 보존) + `runtime\`(임베디드 Python 3.14 + ezdxf·shapely·scipy·numpy·matplotlib + dwg2dxf, 250MB, `python314._pth` 에 `..\app` 필수) + `app\`(스크립트·version.txt·update_source.txt·config.default.json).
+- 서버 = GitHub 공개 저장소(이 폴더가 git 저장소). `latest.json`(main 브랜치 raw) 에 app_version/app_url/runtime_version/runtime_url/notes. app.zip·runtime.zip 은 Releases 자산(app-v<버전>, runtime-v<N>).
+- 상대 PC 동작: bat 실행 → updater 가 latest.json 확인 → 새 버전이면 변경 내용 출력 후 app.zip 받아 app\ 교체(런타임은 runtime_new\ 에 풀고 bat 가 교체) → 파이프라인 실행. 오프라인이면 건너뜀. report 사본은 `logs\` 에 쌓여 피드백 zip 에 포함.
+- 피드백: 상대가 `피드백_보내기.bat` → 바탕화면 `골조거더보_피드백_날짜.zip`(내용·config·최근 report 10개) → 카톡/메일 → 이 채팅에 넣고 수정.
+- 새 버전 내기(이 PC, gh 로그인 필요): 소스 고친 뒤 `python dist_build\release.py 1.0.1 "변경 내용"` (PowerShell 은 한글 인자가 깨지므로 Bash 도구에서 실행하거나 `--notes-file=notes.txt`). 런타임 바뀌면 `--runtime`(build_runtime.py 재실행 후, runtime_version 올림), 처음 배포 전체 zip 은 `--full`. `--dry` 는 파일만 생성.
+- 검증 절차: dist_build\pkg 를 임시 폴더에 복사 → bat 에 DXF 드래그 → 결과 확인 → 버전 올려 release → 임시 폴더 재실행 시 "새 버전 발견 … 업데이트 완료" 확인.
+
 ## 실행 순서(PowerShell, 폴더 `C:\Users\taeju\Tools\DwgRework`, `$env:PYTHONUTF8=1`)
 ```
 python dump.py data/1.dxf out/d1.pkl --msp                                  # 원본 전개(1.5M 프리미티브, 26초)

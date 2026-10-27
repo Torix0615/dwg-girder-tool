@@ -4,11 +4,13 @@
    "version": "1.0.0",
    "date": "2026-10-27",
    "items": [
-    "첫 배포: 1단계 골조 추출 + 2단계 거더·보 생성, 자동 업데이트, 피드백 zip"
+    "첫 배포: 1단계 골조·중심선·OPEN 추출 + 2단계 거더·보 생성(아래층 기둥 기준), 층별 도면 HTML",
+    "실행 시 자동 업데이트, 피드백 zip(피드백_보내기.bat)"
    ]
   }
  ],
  "app_version": "1.0.0",
- "app_url": "https://github.com/OWNER/REPO/releases/download/app-v1.0.0/app.zip",
- "runtime_version": "1"
+ "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.0.0/app.zip",
+ "runtime_version": "1",
+ "runtime_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/runtime-v1/runtime.zip"
 }
