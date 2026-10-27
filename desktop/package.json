@@ -1,7 +1,7 @@
 {
   "name": "girder-tool",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "골조·거더·보 생성기 데스크탑 (Electron 셸)",
   "main": "main.js",
   "author": "taeju",

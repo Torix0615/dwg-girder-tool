@@ -1,6 +1,14 @@
 {
  "notes": [
   {
+   "version": "1.1.2",
+   "date": "2026-10-28",
+   "items": [
+    "실패한 작업에 '보고서 열기' 버튼",
+    "프로그램 자동 설치 경로 검증"
+   ]
+  },
+  {
    "version": "1.1.1",
    "date": "2026-10-28",
    "items": [
@@ -35,12 +43,12 @@
    ]
   }
  ],
- "app_version": "1.1.1",
- "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.1.1/app.zip",
+ "app_version": "1.1.2",
+ "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.1.2/app.zip",
  "runtime_version": "1",
  "runtime_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/runtime-v1/runtime.zip",
- "shell_version": "1.1.0",
- "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.1.0/GirderTool-Setup-1.1.0.exe",
- "shell_sha256": "1955be0909a10f960f650fcba8ce52d8e8344bbe1fa47fcc13138d55820be638",
- "shell_size": 145770019
+ "shell_version": "1.1.2",
+ "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.1.2/GirderTool-Setup-1.1.2.exe",
+ "shell_sha256": "5e1a5e2bb1c3dae1ba8de7c89193d0f2906b954ecd49c0722d13c113da0231e2",
+ "shell_size": 145770193
 }
