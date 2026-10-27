@@ -86,7 +86,7 @@ def main():
         for f in os.listdir(hdir):
             if f.endswith(".html"):
                 shutil.copyfile(os.path.join(hdir, f), os.path.join(outdir, f"{base}_{f}"))
-    log.append(f"완료: 총 {time.time()-T0:.0f}s → {dst}")
+    log.append(f"완료: 총 {time.time()-T0:.0f}s → {dst}\n결과 폴더: {outdir}")
     save_report()
     if not a.keep:
         shutil.rmtree(work, ignore_errors=True)
