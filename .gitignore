@@ -1,0 +1,14 @@
+data/
+out/
+work/
+logs/
+dist_build/pkg/
+dist_build/dl/
+dist_build/out/
+__pycache__/
+*.pkl
+*.dxf
+*.dwg
+*.png
+*.html
+*.zip
