@@ -170,6 +170,18 @@ async function download(jobId, kind = 'dxf') {
   return { ok: true, message: `저장됨: ${r.filePath}`, file: r.filePath };
 }
 
+/** 프로그램 오류(입력 문제가 아닌 실패) 자동 보고 — 피드백과 별개, 사용자 조작 없음 */
+async function reportError(j) {
+  try {
+    engine.setErrorReport(j.id, { sent: false, at: new Date().toISOString(), message: '오류 보고 전송 중' });
+    const r = await require('./lib/feedback.cjs').sendError({ root: ROOT, engine, bundledApp: path.join(BUNDLED, 'app'), appVersion: app.getVersion(), job: j, log });
+    engine.setErrorReport(j.id, { sent: Boolean(r.ok), id: r.id, at: new Date().toISOString(), message: r.message });
+  } catch (e) {
+    log('오류 보고 실패', e);
+    engine.setErrorReport(j.id, { sent: false, at: new Date().toISOString(), message: `오류 보고 실패: ${e.message}` });
+  }
+}
+
 function registerIpc() {
   ipcMain.handle('start-job', () => startJob());
   ipcMain.handle('run', (_e, paths) => engine.enqueue((paths || []).slice(0, 1)));
@@ -208,6 +220,7 @@ app.whenReady().then(() => {
     root: ROOT,
     bundled: BUNDLED,
     log,
+    onError: (j) => reportError(j),
     onState: (s) => {
       send('engine-state', s);
       if (!s.running && updater) {
@@ -238,6 +251,9 @@ app.whenReady().then(() => {
     }
     send('engine-state', engine.state());
     updater.start();
+    setTimeout(() => {
+      for (const j of engine.pendingErrorReports()) reportError(j); // 지난 실행에서 못 보낸 오류 보고 재시도
+    }, 15000);
     const files = fileArgs(process.argv);
     if (files.length) engine.enqueue(files.slice(0, 1));
   });

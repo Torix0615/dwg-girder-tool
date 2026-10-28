@@ -59,10 +59,11 @@ def main():
         body = body.strip().replace("\n", " ")[:120]
         files = ", ".join(sorted(os.listdir(os.path.join(d, "files")))) if os.path.isdir(os.path.join(d, "files")) else "-"
         verdict = open(os.path.join(d, "판정.md"), encoding="utf-8").read().splitlines()[0] if os.path.exists(os.path.join(d, "판정.md")) else "(미판정)"
-        rows.append(f"| {fid} | {meta.get('scope', '-')} | {meta.get('job', '-')} | {body} | {verdict} |")
+        kind = "오류보고" if meta.get("kind") == "error" else "피드백"
+        rows.append(f"| {fid} | {kind} | {meta.get('scope', '-')} | {meta.get('job', '-')} | {body} | {verdict} |")
     with open(os.path.join(OUT, "INDEX.md"), "w", encoding="utf-8") as f:
-        f.write("# 피드백 목록\n\n판정은 각 폴더의 판정.md 첫 줄(공통 규칙 → 코드 반영 / 이 도면 전용 / 보류). 절차는 docs/FEEDBACK_LOOP.md\n\n")
-        f.write("| id | 사용자 구분 | 도면 | 내용 | 판정 |\n|---|---|---|---|---|\n" + "\n".join(rows) + "\n")
+        f.write("# 피드백·오류보고 목록\n\n판정은 각 폴더의 판정.md 첫 줄(공통 규칙 → 코드 반영 / 이 도면 전용 / 보류). 오류보고는 재현 후 코드 수정이 원칙. 절차는 docs/FEEDBACK_LOOP.md\n\n")
+        f.write("| id | 종류 | 구분 | 도면 | 내용 | 판정 |\n|---|---|---|---|---|---|\n" + "\n".join(rows) + "\n")
     print(f"INDEX 갱신: {os.path.join(OUT, 'INDEX.md')} ({len(rows)}건)")
 
 

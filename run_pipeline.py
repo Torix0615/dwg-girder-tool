@@ -51,6 +51,29 @@ def step(name, cmd):
         print(r.stderr[-3000:], flush=True)
         log.append("[오류 출력]\n" + r.stderr[-3000:])
         raise SystemExit(f"{name} 실패 (코드 {r.returncode})")
+    return r.stdout or ""
+
+
+MISSING_XREF = []  # 결합하지 못한 외부참조 이름(실패 원인 안내용)
+INPUT_KEYS = ("골조(노랑) 색의 선이 없음", "입력은 .dwg 또는 .dxf", "입력 파일 없음", "dwg2dxf 변환 실패", "층 덩어리를 만들지 못함",
+              "is not a DXF file", "DXFStructureError", "Invalid DXF")
+
+
+def classify_failure(msg):
+    """실패 원인 분류: 입력 문제(사용자가 고칠 것) vs 프로그램 오류(자동 보고 대상). 보고서 마지막에 [원인] 줄로 기록"""
+    text = "\n".join(log) + "\n" + str(msg)
+    if MISSING_XREF and "골조(노랑) 색의 선이 없음" in text:
+        return "입력", f"외부참조 파일이 없음: {', '.join(MISSING_XREF)} — 원본과 같은 폴더(또는 XREF 폴더)에 넣고 다시 실행"
+    if "골조(노랑) 색의 선이 없음" in text:
+        return "입력", "노란색 골조 선이 없음 — 평면 도형이 다른 파일(XREF)에 있거나 골조가 노란색이 아님"
+    if "dwg2dxf 변환 실패" in text or "DXF 가 만들어지지 않음" in text:
+        return "입력", "DWG 변환 실패 — 파일이 손상됐거나 지원하지 않는 형식"
+    if "is not a DXF file" in text or "DXFStructureError" in text or "Invalid DXF" in text:
+        return "입력", "DXF 파일을 읽을 수 없음 — 손상됐거나 DXF 형식이 아님"
+    for k in INPUT_KEYS:
+        if k in text:
+            return "입력", str(msg)
+    return "오류", str(msg)
 
 
 def main():
@@ -74,7 +97,10 @@ def main():
     py = [sys.executable]
     # 0.5 외부참조(XREF) 결합: 원본 폴더(및 그 XREF 하위 폴더)에서 참조 파일을 찾아 심는다. 없으면 건너뜀
     bound = os.path.join(work, base + "_bound.dxf")
-    step("외부참조(XREF) 결합", py + ["xref_bind.py", dxf, bound, "--dirs", os.path.dirname(src), "--work", os.path.join(work, "xref_tmp")])
+    xo = step("외부참조(XREF) 결합", py + ["xref_bind.py", dxf, bound, "--dirs", os.path.dirname(src), "--work", os.path.join(work, "xref_tmp")])
+    for line in xo.splitlines():
+        if line.startswith("BOUND=") and "MISSING=" in line:
+            MISSING_XREF[:] = [n for n in line.split("MISSING=", 1)[1].split(",") if n]
     if os.path.exists(bound):
         dxf = bound
     d1, cand, model, res, final = (os.path.join(work, f) for f in ("d1.pkl", "s1_cand.pkl", "s2_model.pkl", "s2_result.pkl", "최종.dxf"))
@@ -107,10 +133,13 @@ try:
     main()
 except SystemExit as e:
     if e.code not in (None, 0):
-        log.append(f"[중단] {e.code}")
+        kind, why = classify_failure(e.code)
+        log.append(f"[중단] {e.code}\n[원인] {kind} — {why}")
+        print(f"\n[원인] {kind} — {why}", flush=True)
         save_report()
     raise
 except Exception:
-    log.append("[예외]\n" + traceback.format_exc())
+    tb = traceback.format_exc()
+    log.append("[예외]\n" + tb + "\n[원인] 오류 — 예외: " + tb.strip().splitlines()[-1])
     save_report()
     raise

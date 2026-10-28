@@ -10,7 +10,7 @@ const { spawnSync } = require('child_process');
 const { Readable, Transform } = require('stream');
 const { readText } = require('./engine.cjs');
 
-const SCOPE_LABEL = { file: '이 도면에만 해당', all: '모든 도면에 공통', unknown: '모름' };
+const SCOPE_LABEL = { file: '이 도면에만 해당', all: '모든 도면에 공통', unknown: '모름', error: '자동 오류 보고' };
 
 function desktopDir() {
   const r = spawnSync('powershell', ['-NoProfile', '-Command', '[Environment]::GetFolderPath("Desktop")'], { windowsHide: true, encoding: 'utf8' });
@@ -118,4 +118,25 @@ async function send({ root, engine, bundledApp, appVersion, text, scope, job, lo
   return { ok: true, sent: true, file: out, message: `서버 전송이 안 되어 바탕화면에 저장했습니다: ${name} — 카카오톡·메일로 보내 주세요` };
 }
 
-module.exports = { send };
+/** 프로그램 오류 자동 보고(피드백과 별개): 보고서·로그·원본 도면을 서버로. 서버가 없거나 실패하면 false(다음 실행 때 재시도) */
+async function sendError({ root, engine, bundledApp, appVersion, job, log }) {
+  const srv = serverInfo(engine, bundledApp);
+  if (!srv) return { ok: false, message: '서버 주소 없음' };
+  const text = `[자동 오류 보고]\n실패: ${job.message}\n원인: ${job.failReason || '-'}\n도면: ${path.basename(job.src)}`;
+  const stamp = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().replace(/[-:T]/g, '').slice(0, 13).replace(/(\d{8})(\d{4})/, '$1_$2');
+  const zip = buildZip({ root, engine, text, scope: 'error', job, log, out: path.join(root, 'tmp', `오류보고_${stamp}.zip`) });
+  const size = fs.statSync(zip).size;
+  const meta = { kind: 'error', version: appVersion, app: engine.versions().app, scope: 'error', job: path.basename(job.src), pc: os.hostname(), text: text.slice(0, 2000) };
+  try {
+    const r = await upload({ srv, file: zip, meta, onProgress: () => {} });
+    fs.rmSync(zip, { force: true });
+    log('오류 보고 전송 완료', r.id, size);
+    return { ok: true, id: r.id, message: `오류 보고 자동 전송됨 (${(size / 1e6).toFixed(1)} MB)` };
+  } catch (e) {
+    fs.rmSync(zip, { force: true });
+    log('오류 보고 전송 실패', e);
+    return { ok: false, message: `오류 보고 전송 실패(${e.message}) — 다음 실행 때 다시 시도` };
+  }
+}
+
+module.exports = { send, sendError };

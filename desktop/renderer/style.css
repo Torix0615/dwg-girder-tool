@@ -97,3 +97,7 @@ textarea:disabled { opacity: .7; }
 input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+.fail { border-radius: 8px; padding: 8px 10px; margin: 6px 0; font-size: 12px; }
+.fail.input { background: #2b2a1f; border: 1px solid #5b5330; }
+.fail.error { background: #2b1f1f; border: 1px solid #5a2f2f; }
+.fail b { display: block; margin-bottom: 2px; }

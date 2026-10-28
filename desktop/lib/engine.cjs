@@ -48,7 +48,7 @@ function swapDir(dst, src) {
 /**
  * @param {{ root: string, bundled: string, log: Function, onState: (s:any)=>void }} opts
  */
-function createEngine({ root, bundled, log, onState }) {
+function createEngine({ root, bundled, log, onState, onError = null }) {
   const APP = path.join(root, 'app');
   const RT = path.join(root, 'runtime');
   const CFG = path.join(root, 'config.json');
@@ -223,12 +223,20 @@ function createEngine({ root, bundled, log, onState }) {
       } else {
         j.state = 'failed';
         j.message = `실패 (코드 ${code})`;
+        // 보고서의 [원인] 줄: "입력" = 사용자가 고칠 것(참조 파일 없음 등), "오류" = 프로그램 오류(자동 보고)
+        const m = /\[원인\]\s*(입력|오류)\s*[—-]\s*(.+)/.exec(readText(rep));
+        j.failKind = m ? (m[1] === '입력' ? 'input' : 'error') : 'error';
+        j.failReason = m ? m[2].trim() : (j.log.slice(-1)[0] || '');
+        j.errorReport = null;
       }
       log(`${j.state}: ${j.name} ${j.message}`);
       proc = null;
       current = null;
       saveJobs();
       emit();
+      if (j.state === 'failed' && j.failKind === 'error' && onError) {
+        onError(j); // 자동 오류 보고(비동기)
+      }
       next();
     });
   }
@@ -262,7 +270,21 @@ function createEngine({ root, bundled, log, onState }) {
     return true;
   }
 
-  return { enqueue, cancel, remove, setFeedback, state, versions, ensureInstalled, ensureConfig, isIdle: () => !current, job: (id) => jobs.find((j) => j.id === id) || null, paths: { APP, RT, CFG, PY, RESULTS }, EXT };
+  function setErrorReport(id, er) {
+    const j = jobs.find((x) => x.id === id);
+    if (!j) return false;
+    j.errorReport = er;
+    saveJobs();
+    emit();
+    return true;
+  }
+
+  /** 전송 못 한 오류 보고(오프라인 등) 목록 — 시작 때 재시도용 */
+  function pendingErrorReports() {
+    return jobs.filter((j) => j.state === 'failed' && j.failKind === 'error' && !(j.errorReport && j.errorReport.sent));
+  }
+
+  return { enqueue, cancel, remove, setFeedback, setErrorReport, pendingErrorReports, state, versions, ensureInstalled, ensureConfig, isIdle: () => !current, job: (id) => jobs.find((j) => j.id === id) || null, paths: { APP, RT, CFG, PY, RESULTS }, EXT };
 }
 
 module.exports = { createEngine, cmpVer, readText, swapDir };

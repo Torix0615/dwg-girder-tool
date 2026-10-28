@@ -97,7 +97,7 @@ function renderList() {
   for (const j of [...state.jobs].reverse()) {
     const li = document.createElement('li');
     li.className = 'jobitem ' + j.state + (j.id === selected ? ' sel' : '');
-    const st = j.state === 'queued' ? '대기' : j.state === 'running' ? '진행 중' : j.state === 'done' ? (j.feedback && j.feedback.sent ? '완료 · 피드백 전송됨' : '완료') : j.state === 'failed' ? '실패' : '취소';
+    const st = j.state === 'queued' ? '대기' : j.state === 'running' ? '진행 중' : j.state === 'done' ? (j.feedback && j.feedback.sent ? '완료 · 피드백 전송됨' : '완료') : j.state === 'failed' ? (j.failKind === 'input' ? '실패 · 도면 문제' : j.errorReport && j.errorReport.sent ? '실패 · 오류 보고됨' : '실패') : '취소';
     li.innerHTML = `<div class="ji-name" title="${esc(j.src)}">${esc(j.name)}</div><div class="ji-state">${esc(st)}</div>`;
     if (j.state !== 'running') {
       const x = document.createElement('button');
@@ -138,7 +138,14 @@ function renderDetail(j) {
     <h2 class="d-name" title="${esc(j.src)}">${esc(j.name)}</h2>
     <div class="d-status ${j.state}">${esc(status)}</div>
     ${j.state === 'running' || j.state === 'queued' ? `<div class="bar"><i style="width:${pct}%"></i></div><pre class="d-tail">${esc((j.tail || []).slice(-5).join('\n'))}</pre><div class="row"><button class="btn small danger" data-act="cancel">작업 취소</button></div>` : ''}
-    ${j.state === 'failed' ? `<pre class="d-tail">${esc((j.tail || []).slice(-8).join('\n'))}</pre>${j.report ? `<div class="row"><button class="btn small ghost" data-act="report">보고서 열기</button></div>` : ''}` : ''}
+    ${
+      j.state === 'failed'
+        ? `<div class="fail ${j.failKind === 'input' ? 'input' : 'error'}">
+            <b>${j.failKind === 'input' ? '도면 문제' : '프로그램 오류'}</b> ${esc(j.failReason || '')}
+            <div class="hint">${j.failKind === 'input' ? '안내대로 파일을 갖춘 뒤 다시 작업 시작하면 됩니다.' : esc(j.errorReport ? j.errorReport.message : '오류 보고를 자동으로 보냅니다')}</div>
+          </div><pre class="d-tail">${esc((j.tail || []).slice(-8).join('\n'))}</pre>${j.report ? `<div class="row"><button class="btn small ghost" data-act="report">보고서 열기</button></div>` : ''}`
+        : ''
+    }
     ${j.state === 'done' ? `<div class="row gap"><button class="btn" data-act="download">⬇ 결과 DXF</button>${j.mgt ? `<button class="btn" data-act="download-mgt">⬇ MIDAS GEN (MGT)</button>` : ''}<span class="hint">${esc(j.result ? j.result.split(/[\\/]/).pop() : '')}</span></div>` : ''}
     ${
       j.state === 'done' || j.state === 'failed'
