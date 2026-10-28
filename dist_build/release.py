@@ -125,6 +125,9 @@ def main():
         assets.append(full)
     if shell_exe:
         assets.append(shell_exe)
+        readme = os.path.join(HERE, "README.txt")  # 설치본과 함께 전달하는 사용자 안내문
+        if os.path.exists(readme):
+            assets.append(readme)
     if dry:
         print("(dry) gh/git 생략"); return
     # 6. 릴리스 + 저장소 반영
