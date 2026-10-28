@@ -101,3 +101,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 .fail.input { background: #2b2a1f; border: 1px solid #5b5330; }
 .fail.error { background: #2b1f1f; border: 1px solid #5a2f2f; }
 .fail b { display: block; margin-bottom: 2px; }
+/* 핀(항상 위): 꺼짐=회색 윤곽선, 켜짐=노란색 채움 + 배경 */
+.iconbtn.pin svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; vertical-align: middle; }
+.iconbtn.pin.on { color: var(--accent); background: #3a3420; }
+.iconbtn.pin.on svg { fill: currentColor; }

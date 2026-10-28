@@ -1,6 +1,14 @@
 {
  "notes": [
   {
+   "version": "1.2.3",
+   "date": "2026-10-29",
+   "items": [
+    "실패 카드의 '보고서 열기' 버튼 제거(동작 안 함)",
+    "항상 위(핀) 기본 해제, 켜짐=노란색 채움·꺼짐=회색 윤곽으로 상태 구분"
+   ]
+  },
+  {
    "version": "1.2.2",
    "date": "2026-10-29",
    "items": [
@@ -79,12 +87,12 @@
    ]
   }
  ],
- "app_version": "1.2.2",
- "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.2.2/app.zip",
+ "app_version": "1.2.3",
+ "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.2.3/app.zip",
  "runtime_version": "1",
  "runtime_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/runtime-v1/runtime.zip",
- "shell_version": "1.2.2",
- "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.2.2/GirderTool-Setup-1.2.2.exe",
- "shell_sha256": "eac5444b06553fa1f604f297baac56eff7fcb3731e83ea6fabb396b67cfa18c6",
- "shell_size": 145789900
+ "shell_version": "1.2.3",
+ "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.2.3/GirderTool-Setup-1.2.3.exe",
+ "shell_sha256": "5cb8051cc5084992656e446cfc22ae52e26a2bbb58d218c28754e601c16318f6",
+ "shell_size": 145790204
 }

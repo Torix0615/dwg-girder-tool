@@ -16,7 +16,7 @@ let mainWindow = null;
 let tray = null;
 let engine = null;
 let updater = null;
-let settings = { pinned: true, bounds: null };
+let settings = { pinned: false, bounds: null }; // 항상 위(핀)는 기본 해제, 필요할 때 켬
 
 function log(...args) {
   const d = new Date();

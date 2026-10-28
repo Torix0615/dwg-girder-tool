@@ -143,7 +143,7 @@ function renderDetail(j) {
         ? `<div class="fail ${j.failKind === 'input' ? 'input' : 'error'}">
             <b>${j.failKind === 'input' ? '도면 문제' : '프로그램 오류'}</b> ${esc(j.failReason || '')}
             <div class="hint">${j.failKind === 'input' ? '안내대로 파일을 갖춘 뒤 다시 작업 시작하면 됩니다.' : esc(j.errorReport ? j.errorReport.message : '오류 보고를 자동으로 보냅니다')}</div>
-          </div><pre class="d-tail">${esc((j.tail || []).slice(-8).join('\n'))}</pre>${j.report ? `<div class="row"><button class="btn small ghost" data-act="report">보고서 열기</button></div>` : ''}`
+          </div><pre class="d-tail">${esc((j.tail || []).slice(-8).join('\n'))}</pre>`
         : ''
     }
     ${j.state === 'done' ? `<div class="row gap"><button class="btn" data-act="download">⬇ 결과 DXF</button>${j.mgt ? `<button class="btn" data-act="download-mgt">⬇ MIDAS GEN (MGT)</button>` : ''}<span class="hint">${esc(j.result ? j.result.split(/[\\/]/).pop() : '')}</span></div>` : ''}
@@ -168,7 +168,6 @@ function renderDetail(j) {
     }
   `;
   el.querySelector('[data-act=cancel]')?.addEventListener('click', () => api.cancel());
-  el.querySelector('[data-act=report]')?.addEventListener('click', () => api.openPath(j.report));
   el.querySelector('[data-act=download-mgt]')?.addEventListener('click', async (e) => {
     e.target.disabled = true;
     const r = await api.download(j.id, 'mgt');
