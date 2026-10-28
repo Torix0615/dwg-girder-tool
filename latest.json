@@ -1,6 +1,14 @@
 {
  "notes": [
   {
+   "version": "1.2.1",
+   "date": "2026-10-28",
+   "items": [
+    "MGT FRAME-RLS 를 레퍼런스 표기대로 2줄(i단 / j단+그룹)로",
+    "MGT 를 공개 파서(STKO MidasGenImporter) 규칙으로 자체 검증: NODE·BEAM·WALL·MATERIAL·SECTION·THICKNESS·STORY·CONSTRAINT 통과"
+   ]
+  },
+  {
    "version": "1.2.0",
    "date": "2026-10-28",
    "items": [
@@ -63,8 +71,8 @@
    ]
   }
  ],
- "app_version": "1.2.0",
- "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.2.0/app.zip",
+ "app_version": "1.2.1",
+ "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.2.1/app.zip",
  "runtime_version": "1",
  "runtime_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/runtime-v1/runtime.zip",
  "shell_version": "1.2.0",

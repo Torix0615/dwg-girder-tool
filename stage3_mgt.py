@@ -397,9 +397,11 @@ L.append("")
 if releases:
     L.append("*FRAME-RLS    ; Beam End Release")
     L.append("; ELEM_LIST, FLAG-i, Fxi, Fyi, Fzi, Mxi, Myi, Mzi, FLAG-j, Fxj, Fyj, Fzj, Mxj, Myj, Mzj, GROUP")
+    # Quick Reference 표기대로 2줄: 1줄 = 요소, i단 플래그(Fx Fy Fz Mx My Mz, 1=해제)·상대강성(0=완전 해제) / 2줄 = j단, 그룹
     for e_id, pi, pj in releases:
         fi = "000011" if pi else "000000"; fj = "000011" if pj else "000000"
-        L.append(f"   {e_id}, {fi}, 0, 0, 0, 0, 0, 0, {fj}, 0, 0, 0, 0, 0, 0, ")
+        L.append(f"   {e_id}, {fi}, 0, 0, 0, 0, 0, 0")
+        L.append(f"        {fj}, 0, 0, 0, 0, 0, 0, ")
     L.append("")
 L.append("*GROUP    ; Group"); L.append("; NAME, NODE_LIST, ELEM_LIST, PLANE_TYPE")
 for kind, name in (("col", "C1_COLUMN"), ("girder", "G1_GIRDER"), ("beam", "B1_BEAM"), ("wall", "WALL")):

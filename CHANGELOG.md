@@ -36,3 +36,7 @@
 - 2단계 경고 레이어: 비지지 기둥·1방향 지지·거더 위 지지 표시
 - 층 인식 보강: 노랑 골조만으로 층 묶음, 층 표시 있는 제목만, 범례 덩어리 제외, 블록 이름 금지 문자 치환
 - 샘플 4종(A10 1BL·2BL, A04 1단지, A31-001) 회귀 검증
+
+## v1.2.1 (2026-10-28)
+- MGT FRAME-RLS 를 레퍼런스 표기대로 2줄(i단 / j단+그룹)로
+- MGT 를 공개 파서(STKO MidasGenImporter) 규칙으로 자체 검증: NODE·BEAM·WALL·MATERIAL·SECTION·THICKNESS·STORY·CONSTRAINT 통과
