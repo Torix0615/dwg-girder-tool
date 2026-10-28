@@ -28,7 +28,7 @@ function buildZip({ root, engine, text, scope, job, log, out }) {
   const tmp = path.join(root, 'tmp');
   fs.mkdirSync(tmp, { recursive: true });
   const head = [`구분: ${SCOPE_LABEL[scope] || scope || '-'}`, `대상 도면: ${job.src}`, `결과: ${job.result ? path.basename(job.result) : '(실패)'} / ${job.message}`];
-  const attach = [job.src, job.result, job.report].filter((p) => p && fs.existsSync(p));
+  const attach = [job.src, job.result, job.mgt, job.report].filter((p) => p && fs.existsSync(p));
   const tf = path.join(tmp, 'feedback.txt');
   fs.writeFileSync(tf, head.join('\n') + '\n\n' + String(text || '').trim() + '\n', 'utf8');
   const extra = ['데스크탑 로그 최근 50줄:'];

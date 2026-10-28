@@ -71,6 +71,7 @@ function createEngine({ root, bundled, log, onState }) {
           j.message = '이전 실행이 중단됨';
         }
         if (j.result && !fs.existsSync(j.result)) j.result = null;
+        if (j.mgt && !fs.existsSync(j.mgt)) j.mgt = null;
       }
       seq = jobs.reduce((m, j) => Math.max(m, j.id), 0);
     } catch {
@@ -172,7 +173,7 @@ function createEngine({ root, bundled, log, onState }) {
     current = j;
     j.state = 'running';
     j.started = Date.now();
-    j.total = path.extname(j.src).toLowerCase() === '.dwg' ? 6 : 5;
+    j.total = path.extname(j.src).toLowerCase() === '.dwg' ? 8 : 7; // 변환·XREF·전개·1단계·모델·거더보·DXF·MGT
     j.step = '시작';
     fs.mkdirSync(j.outdir, { recursive: true });
     saveJobs();
@@ -209,7 +210,9 @@ function createEngine({ root, bundled, log, onState }) {
       const base = path.basename(j.src, path.extname(j.src));
       const dxf = path.join(j.outdir, `${base}_골조거더보.dxf`);
       const rep = path.join(j.outdir, `${base}_골조거더보_report.txt`);
+      const mgt = path.join(j.outdir, `${base}_MIDAS.mgt`);
       j.report = fs.existsSync(rep) ? rep : null;
+      j.mgt = fs.existsSync(mgt) ? mgt : null;
       if (j.state === 'cancelled') {
         j.message = '취소됨';
       } else if (code === 0 && fs.existsSync(dxf)) {

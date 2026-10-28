@@ -45,9 +45,10 @@ def excluded(p):
 
 
 # ---------- 1. 층 덩어리 ----------
-struct_idx = [i for i, p in enumerate(msp) if p["kind"] in GEOM and p["color"] in (GOLF_C, CEN_C) and not excluded(p)]
+# 층 덩어리는 골조(노랑)만으로 만든다(중심선·도로축선은 층 사이를 이어 붙이므로 제외)
+struct_idx = [i for i, p in enumerate(msp) if p["kind"] in GEOM and p["color"] == GOLF_C and not excluded(p)]
 if not struct_idx:
-    raise SystemExit("골조(노랑)·중심선(빨강) 색의 선이 없음 — 도면 색 규칙(config 골조_색/중심선_색) 확인")
+    raise SystemExit("골조(노랑) 색의 선이 없음 — 외부참조(XREF) 파일이 빠졌거나 도면 색 규칙(config 골조_색)이 다름")
 C = np.array([center(msp[i]) for i in struct_idx])
 cx0, cy0 = C.min(axis=0)
 cell = np.floor((C - [cx0, cy0]) / GAP).astype(int)
@@ -103,8 +104,10 @@ def parse_level(s):
 
 titles = []
 for p in msp:
-    if p["kind"] == "TEXT" and TITLE_RE.search(p["s"]) and not re.search(r"참조|NOTE|주\s*[:：]", p["s"]):
+    if p["kind"] == "TEXT" and TITLE_RE.search(p["s"]) and not re.search(r"참조|NOTE|주\s*[:：]|우선|범례", p["s"]):
         lv = parse_level(p["s"])
+        if lv is None and not re.search(r"PIT|피트|옥탑|지붕|ROOF|기준층|층", p["s"], re.I):
+            continue  # 층 표시가 없는 '…평면도' 문자(도면 설명 등)는 제목이 아님
         titles.append({"x": p["x"], "y": p["y"], "h": p.get("h", 0), "s": p["s"].strip(), "level": lv})
 T = np.array([[t["x"], t["y"]] for t in titles]) if titles else np.zeros((0, 2))
 
@@ -130,6 +133,10 @@ for c, cp in sorted(comps.items(), key=lambda kv: (kv[1]["cen"][0], -kv[1]["cen"
         b = f["bbox"]; f["bbox"] = [min(b[0], x0), min(b[1], y0), max(b[2], x1), max(b[3], y1)]
     f["idx"] += cp["idx"]
 
+# 제목 없는 작은 덩어리(가장 큰 층의 10% 미만: 범례·상세도 등)는 층으로 치지 않음
+_nmax = max(len(f["idx"]) for f in floors.values())
+for k in [k for k, f in floors.items() if f.get("title") is None and len(f["idx"]) < 0.1 * _nmax]:
+    dropped += len(floors[k]["idx"]); del floors[k]
 if not floors:
     raise SystemExit("층 덩어리를 만들지 못함")
 

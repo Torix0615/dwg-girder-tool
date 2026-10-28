@@ -15,3 +15,9 @@
 - XREF 원본은 ezdxf.xref.embed 로 블록에 심고(DWG 는 dwg2dxf 로 임시 변환), XCLIP 은 전개 때 대표점 기준으로 잘라냄. FOEM(도면틀)은 DXF 버전이 높아 결합 실패해도 무방.
 - 2단계 비교: 라멘 층(2~4층)은 참조와 800mm 기준 86% 일치, 지하(무량판)·주거(벽식)는 설계 선택이라 명령문 규칙과 다름 → 도면 전용 판정(feedback_judgments/A31_2026-10-28.md). 보 간격·거더 축선 정렬은 전문가 확인 항목.
 - 숫자 없는 층 제목(PIT)은 층 번호로 쓰지 말고 시트 배치 순서로 끼워 넣어야 지지층이 맞음(0층으로 두면 1층 아래로 들어감).
+
+## 2026-10-28 (3단계 MGT, 샘플 4종, v1.2.0)
+- MGT 문법은 공식 Quick Reference 만으로는 필드 순서가 애매했고, GitHub 의 STKO MidasGenImporter 파서(parser.py)와 그 Examples 의 실제 내보내기 .mgt 를 템플릿으로 써서 확정(NODE/ELEMENT BEAM·WALL/MATERIAL CONC DB/SECTION DBUSER SB/THICKNESS VALUE/STORY/CONSTRAINT/GROUP 이어쓰기 ` \`). FRAME-RLS 만 실례가 없어 Quick Reference 필드 순서대로 작성(미검증).
+- 층 덩어리를 골조+중심선으로 만들면 도로 축선(빨강 CEN)이 층 사이를 이어 붙여 두 층이 한 덩어리가 됨 → 노랑 골조만으로 묶고, 제목은 층 표시가 있는 문자만. 제목 없는 작은 덩어리(범례·상세)는 층이 아님.
+- 샘플 투입은 "큰 틀이 깨지는 지점"을 바로 드러냄: ezdxf 블록 이름 금지 문자(F?1), XREF 없는 DXF, 같은 행 가로 배치. 매번 샘플 4종을 회귀로 돌릴 것(`run_pipeline.py` 10초~2분).
+- 앱 dev 테스트 전 `release.py --dry` 로 pkg/app 을 갱신해야 함: dev 앱은 설치본(pkg/app) 버전이 더 높으면 userData/app 을 덮어써서 수작업 복사가 사라진다.

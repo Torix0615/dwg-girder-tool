@@ -85,6 +85,11 @@ def main():
     step("최종 DXF 작성", py + ["final_write.py", cand, model, res, final] + cfg_args)
     dst = os.path.join(outdir, f"{base}_골조거더보.dxf")
     shutil.copyfile(final, dst)
+    # 3단계: MIDAS Gen MGT
+    mgt = os.path.join(work, "model.mgt")
+    step("3단계 MIDAS GEN MGT 작성", py + ["stage3_mgt.py", cand, model, res, mgt, "--report", os.path.join(work, "mgt_report.txt")] + cfg_args)
+    if os.path.exists(mgt):
+        shutil.copyfile(mgt, os.path.join(outdir, f"{base}_MIDAS.mgt"))
     if a.html:
         hdir = os.path.join(work, "html")
         step("층별 도면 HTML", py + ["render_html.py", final, hdir])

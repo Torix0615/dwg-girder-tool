@@ -139,7 +139,7 @@ function renderDetail(j) {
     <div class="d-status ${j.state}">${esc(status)}</div>
     ${j.state === 'running' || j.state === 'queued' ? `<div class="bar"><i style="width:${pct}%"></i></div><pre class="d-tail">${esc((j.tail || []).slice(-5).join('\n'))}</pre><div class="row"><button class="btn small danger" data-act="cancel">작업 취소</button></div>` : ''}
     ${j.state === 'failed' ? `<pre class="d-tail">${esc((j.tail || []).slice(-8).join('\n'))}</pre>${j.report ? `<div class="row"><button class="btn small ghost" data-act="report">보고서 열기</button></div>` : ''}` : ''}
-    ${j.state === 'done' ? `<div class="row gap"><button class="btn" data-act="download">⬇ 결과 DXF 다운로드</button><span class="hint">${esc(j.result ? j.result.split(/[\\/]/).pop() : '')}</span></div>` : ''}
+    ${j.state === 'done' ? `<div class="row gap"><button class="btn" data-act="download">⬇ 결과 DXF</button>${j.mgt ? `<button class="btn" data-act="download-mgt">⬇ MIDAS GEN (MGT)</button>` : ''}<span class="hint">${esc(j.result ? j.result.split(/[\\/]/).pop() : '')}</span></div>` : ''}
     ${
       j.state === 'done' || j.state === 'failed'
         ? `<section class="fb">
@@ -162,9 +162,15 @@ function renderDetail(j) {
   `;
   el.querySelector('[data-act=cancel]')?.addEventListener('click', () => api.cancel());
   el.querySelector('[data-act=report]')?.addEventListener('click', () => api.openPath(j.report));
+  el.querySelector('[data-act=download-mgt]')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    const r = await api.download(j.id, 'mgt');
+    e.target.disabled = false;
+    if (r.message) el.querySelector('.d-status').textContent = r.message;
+  });
   el.querySelector('[data-act=download]')?.addEventListener('click', async (e) => {
     e.target.disabled = true;
-    const r = await api.download(j.id);
+    const r = await api.download(j.id, 'dxf');
     e.target.disabled = false;
     if (r.message) {
       const s = el.querySelector('.d-status');

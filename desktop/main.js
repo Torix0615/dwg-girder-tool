@@ -157,12 +157,14 @@ async function startJob() {
 }
 
 /** 다운로드: 최종 DXF 만 사용자가 고른 위치에 저장 */
-async function download(jobId) {
+async function download(jobId, kind = 'dxf') {
   const j = engine.job(jobId);
-  if (!j || !j.result || !fs.existsSync(j.result)) return { ok: false, message: '결과 파일이 없습니다' };
-  const r = await dialog.showSaveDialog(mainWindow, { title: '결과 DXF 저장', defaultPath: path.join(app.getPath('downloads'), path.basename(j.result)), filters: [{ name: 'DXF', extensions: ['dxf'] }] });
+  const src = kind === 'mgt' ? j && j.mgt : j && j.result;
+  if (!j || !src || !fs.existsSync(src)) return { ok: false, message: '결과 파일이 없습니다' };
+  const filt = kind === 'mgt' ? [{ name: 'MIDAS Gen MGT', extensions: ['mgt'] }] : [{ name: 'DXF', extensions: ['dxf'] }];
+  const r = await dialog.showSaveDialog(mainWindow, { title: kind === 'mgt' ? 'MIDAS GEN MGT 저장' : '결과 DXF 저장', defaultPath: path.join(app.getPath('downloads'), path.basename(src)), filters: filt });
   if (r.canceled || !r.filePath) return { ok: false, message: '' };
-  fs.copyFileSync(j.result, r.filePath);
+  fs.copyFileSync(src, r.filePath);
   log('다운로드', r.filePath);
   shell.showItemInFolder(r.filePath);
   return { ok: true, message: `저장됨: ${r.filePath}`, file: r.filePath };
@@ -174,7 +176,7 @@ function registerIpc() {
   ipcMain.handle('cancel', () => engine.cancel());
   ipcMain.handle('remove-job', (_e, id) => engine.remove(id));
   ipcMain.handle('engine-state', () => engine.state());
-  ipcMain.handle('download', (_e, id) => download(id));
+  ipcMain.handle('download', (_e, id, kind) => download(id, kind));
   ipcMain.handle('open-path', (_e, p) => shell.openPath(p));
   ipcMain.handle('show-in-folder', (_e, p) => shell.showItemInFolder(p));
   ipcMain.handle('send-feedback', (_e, { text, scope, jobId }) =>

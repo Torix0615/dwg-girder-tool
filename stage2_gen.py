@@ -30,7 +30,7 @@ anchor = {f["id"]: np.array(f["anchor"], dtype=float) for f in floors}
 short = {f["id"]: f["short"] for f in floors}
 pairs = [(order[i], order[i - 1]) for i in range(1, len(order))]  # (도면 층, 지지층=바로 아래층)
 synth = None
-if CFG.get("1층바닥_생성", True) and not any(k >= 1 for k in order) and -1 in order:
+if CFG.get("1층바닥_생성", True) and not any(1 <= k < 1000 for k in order) and -1 in order:
     # 1층 도면이 없는 지하주차장 도면: 1층 바닥을 B1 기둥으로 생성, 위치는 층 간격만큼 위로 외삽
     step = anchor[-1] - anchor[-2] if -2 in anchor else np.array([0.0, 0.0])
     anchor[1] = anchor[-1] + step; short[1] = "1F"; synth = 1

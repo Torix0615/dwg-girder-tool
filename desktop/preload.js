@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('girder', {
   cancel: () => ipcRenderer.invoke('cancel'),
   removeJob: (id) => ipcRenderer.invoke('remove-job', id),
   engineState: () => ipcRenderer.invoke('engine-state'),
-  download: (id) => ipcRenderer.invoke('download', id),
+  download: (id, kind) => ipcRenderer.invoke('download', id, kind || 'dxf'),
   openPath: (p) => ipcRenderer.invoke('open-path', p),
   showInFolder: (p) => ipcRenderer.invoke('show-in-folder', p),
   sendFeedback: (payload) => ipcRenderer.invoke('send-feedback', payload),
