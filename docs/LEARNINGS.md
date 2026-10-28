@@ -21,3 +21,8 @@
 - 층 덩어리를 골조+중심선으로 만들면 도로 축선(빨강 CEN)이 층 사이를 이어 붙여 두 층이 한 덩어리가 됨 → 노랑 골조만으로 묶고, 제목은 층 표시가 있는 문자만. 제목 없는 작은 덩어리(범례·상세)는 층이 아님.
 - 샘플 투입은 "큰 틀이 깨지는 지점"을 바로 드러냄: ezdxf 블록 이름 금지 문자(F?1), XREF 없는 DXF, 같은 행 가로 배치. 매번 샘플 4종을 회귀로 돌릴 것(`run_pipeline.py` 10초~2분).
 - 앱 dev 테스트 전 `release.py --dry` 로 pkg/app 을 갱신해야 함: dev 앱은 설치본(pkg/app) 버전이 더 높으면 userData/app 을 덮어써서 수작업 복사가 사라진다.
+
+## 2026-10-29 (배포 마무리, 이 PC 앱 제거)
+- 배포용 안내문은 `dist_build/README.txt` 한 곳에 두고 `release.py --shell` 이 릴리스 자산으로 함께 올린다(설치본과 같은 Release 페이지에서 받게). 전문가 대상이라 짧게·CAD 용어 그대로(ACI 2, CENTER 선종류, INSERT 0,0, kN·mm).
+- 피드백 서버 점검 순서: `pull_feedback.py --all` 0건이면 `railway volume list`(마운트·용량) → `railway ssh -- ls /data/feedback` 로 실제 파일 확인. 볼륨 사용량 수십 MB 는 ext4 오버헤드라 파일 없음과 모순 아님.
+- 개발 PC 에서 앱 제거: NSIS 언인스톨 `"Uninstall GirderTool.exe" /currentuser /S` 는 레지스트리·바로가기는 지우지만 빈 설치 폴더가 남고 `%APPDATA%\GirderTool` 은 그대로 둔다(수동 삭제). dev Electron 을 돌리면 HKCU Run 에 `electron.app.Electron` 자동 실행 항목이 남으므로 테스트 뒤 반드시 제거.
