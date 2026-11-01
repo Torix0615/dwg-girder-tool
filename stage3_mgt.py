@@ -396,11 +396,11 @@ bl = cont_lines("   ", id_ranges(base_nodes)); bl[-1] += ", 111111, "; L += bl
 L.append("")
 if releases:
     L.append("*FRAME-RLS    ; Beam End Release")
-    L.append("; ELEM_LIST, FLAG-i, Fxi, Fyi, Fzi, Mxi, Myi, Mzi, FLAG-j, Fxj, Fyj, Fzj, Mxj, Myj, Mzj, GROUP")
+    L.append("; ELEM_LIST, bVALUE, FLAG-i, Fxi, Fyi, Fzi, Mxi, Myi, Mzi, FLAG-j, Fxj, Fyj, Fzj, Mxj, Myj, Mzj, GROUP")
     # Quick Reference 표기대로 2줄: 1줄 = 요소, i단 플래그(Fx Fy Fz Mx My Mz, 1=해제)·상대강성(0=완전 해제) / 2줄 = j단, 그룹
     for e_id, pi, pj in releases:
         fi = "000011" if pi else "000000"; fj = "000011" if pj else "000000"
-        L.append(f"   {e_id}, {fi}, 0, 0, 0, 0, 0, 0")
+        L.append(f"   {e_id}, NO, {fi}, 0, 0, 0, 0, 0, 0")  # bVALUE=NO 필수(없으면 MIDAS 임포트 오류, 피드백 cf749a·8d2205)
         L.append(f"        {fj}, 0, 0, 0, 0, 0, 0, ")
     L.append("")
 L.append("*GROUP    ; Group"); L.append("; NAME, NODE_LIST, ELEM_LIST, PLANE_TYPE")

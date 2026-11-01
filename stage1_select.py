@@ -111,9 +111,93 @@ for p in msp:
         titles.append({"x": p["x"], "y": p["y"], "h": p.get("h", 0), "s": p["s"].strip(), "level": lv})
 T = np.array([[t["x"], t["y"]] for t in titles]) if titles else np.zeros((0, 2))
 
+
+# ---------- 2b. 도곽(시트 테두리) 인식 — 최우선(피드백 4b7881): 도곽당 1층, 도곽 밖 도형은 버림 ----------
+def find_frames():
+    """축 정렬 직사각형(닫힌 폴리선 4~5점 또는 LINE 4개, 한 변 ≥ 도곽_최소변) 중 층 제목을 품은 것.
+    제목이 여러 개면 가장 큰 글자의 제목(같은 층이 두 번 적힌 것은 하나로). 서로 다른 층 제목을 같이 품은 사각형은
+    도곽이 아니라 여러 시트를 감싼 선이므로 제외. 겹친(안쪽) 도곽은 바깥 것으로 통합."""
+    FMIN = float(CFG.get("도곽_최소변", 20000))
+    rects = set()
+    for p in msp:
+        if p["kind"] != "POLY":
+            continue
+        pts = [(q[0], q[1]) for q in p["pts"]]
+        if len(pts) == 5 and abs(pts[0][0] - pts[4][0]) < 1 and abs(pts[0][1] - pts[4][1]) < 1:
+            pts = pts[:4]
+        if len(pts) != 4 or not (p.get("closed") or len(p["pts"]) == 5):
+            continue
+        ax = all(abs(pts[k][0] - pts[(k + 1) % 4][0]) < 1 or abs(pts[k][1] - pts[(k + 1) % 4][1]) < 1 for k in range(4))
+        if not ax:
+            continue
+        xs = [q[0] for q in pts]; ys = [q[1] for q in pts]
+        if min(xs) < max(xs) and min(ys) < max(ys) and max(xs) - min(xs) >= FMIN and max(ys) - min(ys) >= FMIN:
+            rects.add((round(min(xs)), round(min(ys)), round(max(xs)), round(max(ys))))
+    Hs = [(min(p["x1"], p["x2"]), p["y1"], max(p["x1"], p["x2"])) for p in msp if p["kind"] == "LINE" and abs(p["y1"] - p["y2"]) < 1 and abs(p["x1"] - p["x2"]) >= FMIN]
+    Vs = [(p["x1"], min(p["y1"], p["y2"]), max(p["y1"], p["y2"])) for p in msp if p["kind"] == "LINE" and abs(p["x1"] - p["x2"]) < 1 and abs(p["y1"] - p["y2"]) >= FMIN]
+    if Hs and Vs and len(Hs) * len(Vs) <= 4_000_000:
+        by_x = collections.defaultdict(list)
+        for x, y0, y1 in Vs:
+            by_x[round(x / 5)].append((y0, y1))
+        hk = collections.defaultdict(list)
+        for xa, y, xb in Hs:
+            hk[(round(xa / 5), round(xb / 5))].append(y)
+        for (ka, kb), ys in hk.items():
+            ys = sorted(set(round(v) for v in ys))
+            for i in range(len(ys)):
+                for j in range(i + 1, len(ys)):
+                    ylo, yhi = ys[i], ys[j]
+                    if yhi - ylo < FMIN:
+                        continue
+                    ok = 0
+                    for kx in (ka, kb):
+                        if any(abs(v0 - ylo) < 5 and abs(v1 - yhi) < 5 for v0, v1 in by_x.get(kx, []) + by_x.get(kx - 1, []) + by_x.get(kx + 1, [])):
+                            ok += 1
+                    if ok == 2:
+                        rects.add((ka * 5, ylo, kb * 5, yhi))
+    cands = []
+    for r in rects:
+        x0, y0, x1, y1 = r
+        inside = [t for t in titles if x0 <= t["x"] <= x1 and y0 <= t["y"] <= y1]
+        if not inside:
+            continue
+        hmax = max(t["h"] for t in inside)
+        top = [t for t in inside if t["h"] >= hmax * 0.999]
+        keys = {t["level"] if t["level"] is not None else re.sub(r"\s", "", t["s"]) for t in top}
+        if len(keys) > 1:
+            continue
+        cands.append({"bbox": [float(x0), float(y0), float(x1), float(y1)], "title": top[0], "area": (x1 - x0) * (y1 - y0)})
+    out = []
+    for c in sorted(cands, key=lambda c: c["area"]):  # 작은 것부터: 큰 사각형이 다른 층의 도곽을 품으면 도곽 아님
+        x0, y0, x1, y1 = c["bbox"]
+        inner = [f for f in out if x0 <= f["bbox"][0] and y0 <= f["bbox"][1] and f["bbox"][2] <= x1 and f["bbox"][3] <= y1]
+        if any(f["title"]["level"] != c["title"]["level"] or (f["title"]["level"] is None and f["title"]["s"] != c["title"]["s"]) for f in inner):
+            continue
+        out = [f for f in out if f not in inner] + [c]
+    return out
+
+
+frames = find_frames() if CFG.get("도곽_인식", True) else []
+FRAME_MODE = bool(frames)
 floors = {}  # id -> {label, anchor, bbox, idx}
 unnamed = 0
-for c, cp in sorted(comps.items(), key=lambda kv: (kv[1]["cen"][0], -kv[1]["cen"][1])):
+if FRAME_MODE:
+    for n_fr, fr in enumerate(frames):
+        t = fr["title"]
+        fid = t["level"] if t["level"] is not None else ("?", titles.index(t))
+        f = floors.setdefault(fid, {"label": t["s"], "anchor": (t["x"], t["y"]), "bbox": list(fr["bbox"]), "idx": [], "title": t["s"]})
+        b = f["bbox"]; x0, y0, x1, y1 = fr["bbox"]
+        f["bbox"] = [min(b[0], x0), min(b[1], y0), max(b[2], x1), max(b[3], y1)]
+    # 골조 프리미티브를 도곽(대표점이 들어가는 사각형)에 배정, 밖이면 버림
+    for i in struct_idx:
+        x, y = center(msp[i])
+        for fid, f in floors.items():
+            x0, y0, x1, y1 = f["bbox"]
+            if x0 <= x <= x1 and y0 <= y <= y1:
+                f["idx"].append(i); break
+        else:
+            dropped += 1
+for c, cp in (sorted(comps.items(), key=lambda kv: (kv[1]["cen"][0], -kv[1]["cen"][1])) if not FRAME_MODE else []):
     x0, y0, x1, y1 = cp["bbox"]
     lim = 1.5 * max(x1 - x0, y1 - y0) + 20000
     tid = None
@@ -134,11 +218,14 @@ for c, cp in sorted(comps.items(), key=lambda kv: (kv[1]["cen"][0], -kv[1]["cen"
     f["idx"] += cp["idx"]
 
 # 제목 없는 작은 덩어리(가장 큰 층의 10% 미만: 범례·상세도 등)는 층으로 치지 않음
-_nmax = max(len(f["idx"]) for f in floors.values())
+_nmax = max(len(f["idx"]) for f in floors.values()) if floors else 0
 for k in [k for k, f in floors.items() if f.get("title") is None and len(f["idx"]) < 0.1 * _nmax]:
     dropped += len(floors[k]["idx"]); del floors[k]
+if FRAME_MODE:  # 골조가 하나도 없는 도곽(빈 시트·표지)은 층이 아님
+    for k in [k for k, f in floors.items() if not f["idx"]]:
+        del floors[k]
 if not floors:
-    raise SystemExit("층 덩어리를 만들지 못함")
+    raise SystemExit("층 덩어리를 만들지 못함" + (" (도곽은 있으나 안에 노란 골조 선이 없음)" if FRAME_MODE else ""))
 
 # 숫자 없는 층(PIT 등): 기준점 배치 순서(층이 늘어선 축)에서 이웃 층 번호의 중간값으로 끼워 넣음
 _unres = [k for k in floors if isinstance(k, tuple)]
@@ -183,11 +270,12 @@ def short_label(fid, label):
 def floor_lookup():
     """모든 프리미티브를 층 bbox(여유 GAP) 로 배정: 대표점이 들어가는 bbox 중 가장 가까운 중심"""
     boxes = {fid: f["bbox"] for fid, f in floors.items()}
+    margin = 0.0 if FRAME_MODE else GAP  # 도곽 모드: 도곽 안의 것만(블록은 이미 전개됐으므로 조각 단위로 판정)
     def which(p):
         x, y = center(p)
         best, bd = None, None
         for fid, (x0, y0, x1, y1) in boxes.items():
-            if x0 - GAP <= x <= x1 + GAP and y0 - GAP <= y <= y1 + GAP:
+            if x0 - margin <= x <= x1 + margin and y0 - margin <= y <= y1 + margin:
                 dd = math.hypot(x - (x0 + x1) / 2, y - (y0 + y1) / 2)
                 if bd is None or dd < bd:
                     best, bd = fid, dd
@@ -426,6 +514,7 @@ for fid in order:
 FY = {fid: float(floors[fid]["anchor"][1]) for fid in order}
 ys = sorted(set(FY.values()))
 H = float(np.median(np.diff(ys))) if len(ys) > 1 else 0.0
+print(f"도곽 {len(frames)}개 인식 → 도곽당 1층(도곽 밖 도형 제외)" if FRAME_MODE else "도곽 없음 → 골조 덩어리로 층 구분")
 print(f"층 {len(order)}개 (제목 {len(titles)}개, 버린 덩어리 프리미티브 {dropped}):")
 for m in meta:
     c = cand[m["id"]]

@@ -30,3 +30,15 @@ python dist_build/pull_feedback.py
   - 입력: 참조(XREF) 파일 없음(빠진 이름 표시)·노란 골조 선 없음·DWG 변환/DXF 읽기 실패. 카드에 조치 안내만 보이고 전송하지 않는다(사용자가 파일을 갖춰 다시 실행).
   - 오류: 그 외 단계 실패·예외. 앱이 보고서·로그·원본 도면을 서버로 자동 전송(메타 kind=error). 오프라인이면 다음 실행 15초 뒤 재시도.
 - 이 PC: `pull_feedback.py` 가 같은 폴더에 받고 INDEX 의 종류 열에 "오류보고"로 표시. 처리 원칙 = 원본으로 재현 → 코드 수정 → 샘플 회귀 → 배포. 판정.md 는 "오류 수정" 한 줄.
+
+## 6. 채팅 명령 "피드백 반영하여 업데이트 해줘" (2026-10-29 지시, 되묻지 않고 끝까지 자동)
+이 PC 의 Claude 세션에서 이 명령을 받으면 아래를 질문 없이 순서대로 수행한다(Bash 도구, cwd 이 폴더, `PYTHONUTF8=1`).
+1. 가져오기: `python dist_build/pull_feedback.py` → `feedback/<id>/` + INDEX.md. 0건이면 "0건" 보고로 끝.
+2. 원인 파악(건마다):
+   - 오류보고(meta.json kind=error): `files/` 원본으로 `python run_pipeline.py <원본> --out <임시폴더> --keep` 재현 → report 의 `[원인]` 줄·traceback → 수정.
+   - 피드백: 피드백.txt(구분·대상·내용)+결과 DXF·report 를 읽고 2절 기준으로 **공통 규칙 / 이 도면 전용 / 보류** 판정, `feedback/<id>/판정.md` 첫 줄에 판정과 근거.
+3. 코드 수정: 공통 규칙·오류 수정만(한 도면 땜질 금지, 3절 옵션 원칙). 엔진(.py·config.json)만이면 app.zip, `desktop/` 변경이면 `--shell`, `server/` 변경이면 `server/` 에서 `railway up --detach`.
+4. 회귀: 피드백 원본 재실행 성공 + `data/1.dxf`(1차) + `data/a31/bound.dxf`(A31) `run_pipeline.py` 성공. 규칙이 바뀌었으면 compare1 / compare_a31 로 정확도가 떨어지지 않았는지 확인.
+5. 배포: 버전 = `latest.json` app_version 의 patch +1(규칙 변경은 minor +1). `python dist_build/release.py <버전> "변경 내용(피드백 id)" [--shell]` → Release·latest.json·CHANGELOG·git push 까지 자동.
+6. 서버의 피드백은 삭제하지 않는다(가져가면 '가져감' 표시만). 보류 건은 배포에서 제외하고 결과에 전문가에게 물을 질문을 적는다.
+7. 보고: 결과표(id·종류·판정·수정 내용·배포 버전) → 꼭 알아야 할 내용 → 수동 지시(있을 때). 배운 점은 `docs/LEARNINGS.md` 에 append.

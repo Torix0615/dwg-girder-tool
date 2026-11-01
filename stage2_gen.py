@@ -20,6 +20,8 @@ P.WALL_GIRDER = bool(CFG["거더_벽끝_사용"]); P.T_JUNCTION = bool(CFG["거�
 P.SPLIT = float(CFG["보_기준_거더길이"]); P.D_MIN = float(CFG["보_베이폭_최소"]); P.D_TWO = float(CFG["보_베이폭_2개"]); P.D_THREE = float(CFG["보_베이폭_3개"])
 P.BEAM_WALL_TH = float(CFG["보_경계벽_최소두께"]); P.EXCLUDE_DONG = bool(CFG["동구역_기둥_제외"])
 P.BEAM_LMAX = P.LMAX
+P.FACE_ONE = bool(CFG.get("거더_1면1개", True)); P.SUB_CROSS = str(CFG.get("보_SUB교차", "제거"))
+P.OVERLAP_PERP = float(CFG.get("간섭_평행거리", 100)); P.MIN_PIECE = float(CFG.get("간섭_최소조각", 300)); P.MAIN_TIE = float(CFG.get("보_MAIN_동률비율", 0.10))
 
 lines = []
 def out(s):
@@ -51,7 +53,9 @@ for N, k in pairs:
     for g in girders:
         kinds[g["kb"]] = kinds.get(g["kb"], 0) + 1
     result[N] = {"girders": girders, "beams": beams, "shift": (float(sh[0]), float(sh[1])), "support": k, "G": G, "B": B}
-    out(f"도면 {short[N]} (지지층 {short[k]}, 기둥 {len(m['cols'])}개): 거더 {len(girders)}개 {kinds}, 보 {len(beams)}개  {time.time()-t0:.1f}s")
+    nm = sum(1 for b in beams if b.get("main")); ns = len(beams) - nm
+    main_axis = next(("X" if b["xish"] else "Y") for b in beams if b.get("main")) if nm else "-"
+    out(f"도면 {short[N]} (지지층 {short[k]}, 기둥 {len(m['cols'])}개): 거더 {len(girders)}개 {kinds}, 보 {len(beams)}개 (MAIN {main_axis} {nm} / SUB {ns})  {time.time()-t0:.1f}s")
 out(f"최하층 {short[order[0]]} 은 거더 없음(아래층 없음)")
 pickle.dump({"result": result, "floors": floors, "P": {kk: getattr(P, kk) for kk in dir(P) if kk.isupper()}}, open(out_p, "wb"), protocol=5)
 if report:

@@ -17,7 +17,7 @@ DWG→DXF 변환: `..\libredwg\dwg2dxf.exe -y -o data\N.dxf <dwg>` (1번 4초, 2
 - 자동 업데이트 3층(lib/updater.cjs, 시작 5초 후·3시간마다, `latest.json` = GitHub raw, 반영 지연 최대 5분): app.zip(스크립트, 32KB) → 변경 내용 띄우고 즉시 교체(작업 중이면 끝난 뒤) / runtime.zip(드묾) / 셸 Setup.exe(shell_version·sha256) → 받아 두고 창이 숨겨지고 작업이 없을 때 무인 설치(/S) 후 `--hidden` 재기동(SyncNote 방식).
 - 피드백 서버(server\server.js, 의존성 0, Railway 프로젝트 `dwg-feedback` 볼륨 /data, 주소 `https://dwg-feedback-production.up.railway.app`): 업로드 `POST /api/feedback` 는 키 없음(IP당 시간당 10건·600MB 제한, 앱 배포물에 비밀값을 넣지 않기 위함), 목록·다운로드·삭제는 `x-key`(Railway 변수 FEEDBACK_KEY = `dist_build/secrets.json` feedback_key, git 제외). zip 내용 = 피드백.txt(구분·대상·내용) + files\(원본 DWG/DXF·결과 DXF·report) + config.json + logs + desktop_log.txt.
 - 실패 처리(v1.2.2): 보고서 `[원인]` 줄로 입력 문제(참조 파일 없음 등 → 카드 안내)와 프로그램 오류(→ 보고서·로그·원본 자동 전송, kind=error)를 나눔.
-- 이 PC 에서 가져오기: `python dist_build\pull_feedback.py` → `feedback\<id>\` + `feedback\INDEX.md`. 판별(공통 규칙 → 코드 반영 / 이 도면 전용 / 보류)·코드 갱신 절차는 `docs\FEEDBACK_LOOP.md`.
+- 이 PC 에서 가져오기: `python dist_build\pull_feedback.py` → `feedback\<id>\` + `feedback\INDEX.md`. 판별(공통 규칙 → 코드 반영 / 이 도면 전용 / 보류)·코드 갱신 절차는 `docs\FEEDBACK_LOOP.md`. 채팅에서 "피드백 반영하여 업데이트 해줘" 라고 하면 가져오기→원인 파악→수정→회귀→배포를 한 번에 수행(FEEDBACK_LOOP 6절).
 - 새 버전 내기(이 PC, gh 로그인, Bash 도구에서 — PowerShell 은 한글 인자가 깨짐): 스크립트만 고치면 `python dist_build/release.py 1.1.1 "변경 내용"`(32KB, 상대는 다음 실행 때 자동), desktop\ 코드를 고치면 `--shell`(electron-builder 빌드 수 분, Setup.exe 첨부, 상대 PC 는 창 숨김 때 무인 설치), 런타임 바뀌면 build_runtime.py 후 `--runtime`, bat 패키지 전체 zip 은 `--full`, `--dry` 는 파일만.
 - 서버 배포: `server\` 에서 `railway up --detach`(이 폴더가 dwg-feedback 프로젝트에 링크됨). 변수 변경 후엔 redeploy.
 - 개발 실행·무GUI 검증: `desktop\node_modules\.bin\electron.cmd . --remote-debugging-port=9333` 후 CDP(Runtime.evaluate `window.girder.*`, Page.captureScreenshot). 설치본과 같은 userData 를 쓰므로 설치본 테스트 전엔 dev 앱 종료.
@@ -47,6 +47,7 @@ python compare_html.py out/html/비교_기존완성본_vs_자동생성.html   # 
 
 ## 확정 규칙(모든 도면 공통, v1.1.3 색·선종류 기준) — 1차 프로젝트·A31 두 참조로 검증
 층 인식
+- **도곽 최우선(v1.3.0, 피드백 4b7881)**: 축 정렬 직사각형(한 변 ≥ `도곽_최소변` 20m, 닫힌 폴리선 또는 LINE 4개) 안에 층 제목이 있으면 도곽으로 보고 도곽당 1층. 서로 다른 층 제목을 품은 사각형은 제외, 겹친 안쪽 테두리는 바깥으로 통합. 도형은 대표점이 든 도곽에 배정(블록은 전개된 조각 단위), 도곽 밖은 버림. 도곽이 없으면 아래 덩어리 방식.
 - 골조(노랑)·중심선 덩어리를 층_분리_간격(10m) 이상 떨어지면 다른 층으로 나누고, 가장 가까운 `…평면도` 제목 문자로 이름을 붙인다(지하N층→B N, 지상N층→N F, 옥탑→PH, 숫자 없는 PIT 등은 시트 순서로 끼움). 세로 띠(1차)·가로 시트(A31) 모두 자동. 층의 기준점 = 제목 위치(층 사이 이동량 계산용).
 - 외부참조(XREF)는 원본 폴더(및 XREF 하위 폴더)에서 찾아 자동 결합(`xref_bind.py`), INSERT 의 XCLIP 범위만 전개.
 1단계(1차 참조 대비 골조 99.7 / 중심선 95.2 / OPEN 85.8 %, A31 참조 대비 골조 지하·2~4층 100·주거층 93~96 / 중심선 84~87(주거 83) / OPEN 100 %)
@@ -56,8 +57,10 @@ python compare_html.py out/html/비교_기존완성본_vs_자동생성.html   # 
 - OPEN = 이름에 OPEN 이 든 레이어의 도형 전체 + 'OPEN' 문자 둘레의 X(대각선).
 2단계(1차 참조 대비 거더 68 / 보 39 %, A31 참조 2~4층 거더 재현 86·정밀 77~87 %(800mm), 보 42~50 %)
 - 각 층 도면의 거더·보는 바로 아래층(지지층)의 기둥·벽 위에 그린다. 최하층은 거더 없음. 1층 도면이 없으면(지하주차장 도면) 최상 지하층 기둥으로 1층 바닥을 만든다.
-- 거더 = 기둥 중심→인접 기둥 중심(4축 방향 ±8°, 횡 700 허용), 사이에 벽이 있으면 벽 면까지, 기둥 없으면 벽 면, 벽도 없으면 기존 거더에 T 접합.
-- 보 = 길이 > 4000 거더 옆 베이에서 반대편 경계까지 폭 D 를 재 D/2 에 평행 보(D ≥ 8.7m 는 2개). X 방향 우선. 200mm 벽은 경계로 무시.
+- 거더 = 기둥 중심→인접 기둥 중심(4축 방향 ±8°, 횡 700 허용), 사이에 벽이 있으면 벽 면까지, 기둥 없으면 벽 면, 벽도 없으면 기존 거더에 T 접합. **기둥 1면당 거더 1개**(v1.3.0: 축 어긋남 작은 쌍부터 확정, 찬 면은 벽/T접합).
+- 보 = 길이 > 4000 거더 옆 베이에서 반대편 경계까지 폭 D 를 재 D/2 에 평행 보(D ≥ 8.7m 는 2개). 200mm 벽은 경계로 무시. **MAIN/SUB**(v1.3.0): 보 길이 합이 큰 축이 MAIN, SUB 보는 MAIN 보를 가로지르지 못함(`보_SUB교차` "제거"=기본, 참조본 6층 X·Y 보 교차 0쌍 / "분할"=조각 유지).
+- **간섭 없음**(v1.3.0, `stage2_engine.resolve`): 우선순위 기둥-기둥 거더 > 기둥-벽 > T접합 > MAIN 보 > SUB 보 > 긴 것. 평행 겹침(100mm)은 겹친 구간을 잘라 1개만, 교차는 낮은 쪽을 교차점에서 분할, 300mm 미만 조각 버림. 잘린 끝은 i/j=None·ka/kb="cut".
+- **(GEN) 중심선 레이어**(v1.3.0, final_write `add_gen`): COLUMN(GEN) 기둥 안 X(90%), GIRDER(GEN)·BEAM(GEN) 중심선, WALL(GEN) 벽 짝 중심선(stage2_model `con_pair`), WALL(GEN)-GAP 같은 직선 위 50~3000mm 끊김 강조.
 - 출력 2중선 폭: X 거더 400·Y 거더 500·보 400. 동(아파트) 구역은 `DEF-기준층 벽체` 레이어가 있을 때만 분리.
 - 참조와의 판정 기록: `feedback_judgments/`(A31: 지하 무량판·주거 벽식은 도면 전용, 거더 축선 정렬·보 간격은 보류).
 

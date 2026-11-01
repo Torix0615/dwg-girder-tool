@@ -31,12 +31,12 @@ def rect_info(P):
 
 
 def wall_thickness(con, dmin=100, dmax=700, overlap=0.5):
-    """각 선분의 평행 짝(100~700mm) 거리 = 벽 두께. 짝 없으면 NaN"""
+    """각 선분의 평행 짝(100~700mm) 거리 = 벽 두께. 짝 없으면 NaN. 짝 index(없으면 -1)도 돌려줌(WALL(GEN) 중심선용)"""
     from scipy.spatial import cKDTree
     n = len(con)
-    th = np.full(n, np.nan)
+    th = np.full(n, np.nan); pair = np.full(n, -1, dtype=int)
     if n == 0:
-        return th
+        return th, pair
     d = con[:, 2:] - con[:, :2]; L = np.hypot(d[:, 0], d[:, 1])
     u = d / np.maximum(L, 1e-9)[:, None]
     mid = (con[:, :2] + con[:, 2:]) / 2
@@ -54,10 +54,10 @@ def wall_thickness(con, dmin=100, dmax=700, overlap=0.5):
             pj = [np.dot(con[j, :2] - con[i, :2], u[i]), np.dot(con[j, 2:] - con[i, :2], u[i])]
             lo = max(0.0, min(pj)); hi = min(L[i], max(pj))
             if hi - lo >= overlap * min(L[i], L[j]) and (best is None or perp < best):
-                best = perp
+                best = perp; bj = j
         if best is not None:
-            th[i] = best
-    return th
+            th[i] = best; pair[i] = bj
+    return th, pair
 
 
 def drop_col_edges(segs, cols, tol=5.0):
@@ -95,7 +95,7 @@ for f in floors:
             d, i = t.query([r["cx"], r["cy"]])
             r["label"] = labels[i][2] if d < 2500 else ""
     con = drop_col_edges(to_segments(c["golf"]), cols)
-    con_th = wall_thickness(con)
+    con_th, con_pair = wall_thickness(con)
     dong = []
     dsegs = to_segments(c.get("def", []))
     if len(dsegs):
@@ -115,7 +115,7 @@ for f in floors:
             for q in parts:
                 if q.area >= float(CFG["동_최소면적_m2"]) * 1e6:
                     dong.append(q.simplify(50))
-    model[k] = {"cols": cols, "con": con, "con_th": con_th, "wallb": np.zeros((0, 4)), "cen": to_segments(c["cen"]), "open": to_segments(c["open"]),
+    model[k] = {"cols": cols, "con": con, "con_th": con_th, "con_pair": con_pair, "wallb": np.zeros((0, 4)), "cen": to_segments(c["cen"]), "open": to_segments(c["open"]),
                 "dong": dong, "bbox": f["bbox"]}
     angs = np.array([r["ang"] for r in cols]) if cols else np.zeros(0)
     print(f"{f['short']:7}: 기둥 {len(cols)}개 (0°:{(np.abs(angs)<1).sum()} 기타:{(np.abs(angs)>=1).sum()}), 벽 선분 {len(con)}(구조벽≥250: {int(np.nansum(con_th >= 250))}, 짝없음: {int(np.isnan(con_th).sum())}), 중심선 {len(model[k]['cen'])}, 동 {len(dong)}개")

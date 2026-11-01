@@ -26,3 +26,15 @@
 - 배포용 안내문은 `dist_build/README.txt` 한 곳에 두고 `release.py --shell` 이 릴리스 자산으로 함께 올린다(설치본과 같은 Release 페이지에서 받게). 전문가 대상이라 짧게·CAD 용어 그대로(ACI 2, CENTER 선종류, INSERT 0,0, kN·mm).
 - 피드백 서버 점검 순서: `pull_feedback.py --all` 0건이면 `railway volume list`(마운트·용량) → `railway ssh -- ls /data/feedback` 로 실제 파일 확인. 볼륨 사용량 수십 MB 는 ext4 오버헤드라 파일 없음과 모순 아님.
 - 개발 PC 에서 앱 제거: NSIS 언인스톨 `"Uninstall GirderTool.exe" /currentuser /S` 는 레지스트리·바로가기는 지우지만 빈 설치 폴더가 남고 `%APPDATA%\GirderTool` 은 그대로 둔다(수동 삭제). dev Electron 을 돌리면 HKCU Run 에 `electron.app.Electron` 자동 실행 항목이 남으므로 테스트 뒤 반드시 제거.
+
+## 2026-10-29 (피드백 반영 명령 고정)
+- 채팅 명령 "피드백 반영하여 업데이트 해줘" 를 docs/FEEDBACK_LOOP.md 6절로 고정: pull_feedback → 원인 파악(오류보고=원본 재현, 피드백=공통/전용/보류 판정.md) → 수정 → 회귀(data/1.dxf, data/a31/bound.dxf, 피드백 원본) → release.py(엔진=app.zip, desktop=--shell, server=railway up). 되묻지 않고 끝까지. 서버 건은 삭제하지 않음.
+- 회귀용 샘플 4종(Downloads/원본)은 삭제돼 있음 → data/ 의 1차·A31 참조 쌍과 피드백에 딸려온 원본이 회귀 자료.
+
+## 2026-11-01 (피드백 6건 반영, v1.3.0)
+- 전문가 피드백 6건(10-29)을 한 번에 반영: 도곽 최우선 층 분리 / 기둥 1면 1거더 + MAIN·SUB 보 / 거더·보 간섭 정리(resolve) / (GEN) 중심선 레이어 5종 / MGT FRAME-RLS bVALUE. 모두 "공통 규칙" 판정(판정.md).
+- 도곽은 4개 도면군 모두 축 정렬 직사각형(ISO A 비 1.41~1.43)이고 DEFPOINT·FORM 계열 레이어·블록(form_흑석·Form_사업계획승인·XR_Form·XREF-FOEM) 안에 있음 → 레이어명이 아니라 "제목을 품은 큰 축정렬 사각형"으로 인식해야 공통. 동심 테두리가 여러 겹이라 바깥으로 통합, 다른 층 제목을 같이 품으면 제외.
+- 보 방향: 수작업 참조본(1차 3번) 6층 모두 X 보 85~90%·X·Y 보 교차 0쌍 → "SUB 보를 MAIN 보로 나눈다"는 격자가 아니라 한 방향 보(교차 SUB 제거)로 해석. 두 축 길이 합이 10% 안이면 동률→X(같은 도면 DXF/DWG 판에서 MAIN 이 갈리던 문제).
+- 간섭 정리는 우선순위(기둥-기둥 > 벽 > T접합 > MAIN 보 > SUB 보 > 긴 것) 순으로 확정하며 STRtree 1개로 교차 분할·평행 트림을 한 번에. 잘린 끝은 i/j=None 으로 두어 경고(비지지)·MGT PIN 판정이 그대로 맞음.
+- 비스듬한 베이에서 양쪽 거더가 만든 보 2개가 몇 도 어긋나 X자로 교차 → 보 합치기 허용치를 각 6도·500mm 로 넓혀 해결.
+- python -P 로 dump.py 를 직접 실행하면 dxfio 를 못 찾음(스크립트 폴더가 sys.path 에서 빠짐). 파이프라인 밖에서 돌릴 땐 -P 없이.

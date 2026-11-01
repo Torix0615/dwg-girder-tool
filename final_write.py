@@ -28,9 +28,78 @@ for nm, pat in (("HIDDEN", [0.375, 0.25, -0.125]), ("CENTER", [2.0, 1.25, -0.25,
     if nm not in doc.linetypes:
         doc.linetypes.add(nm, pattern=pat)
 L_WARN = OL.get("경고", "----- (구조) 경고")
+L_CG, L_GG, L_BG = OL.get("기둥중심", "COLUMN(GEN)"), OL.get("거더중심", "GIRDER(GEN)"), OL.get("보중심", "BEAM(GEN)")
+L_WG, L_WGAP = OL.get("벽중심", "WALL(GEN)"), OL.get("벽중심_끊김", "WALL(GEN)-GAP")
 for name, color, lt in ((L_GOLF, 2, "CONTINUOUS"), (L_CEN, 1, "CENTER"), (L_OPEN, 8, "CONTINUOUS"),
-                        (L_G, 3, "HIDDEN"), (L_B, 4, "HIDDEN"), (L_LOW, 6, "HIDDEN"), (L_DONG, 5, "DASHED"), (L_WARN, 1, "CONTINUOUS")):
+                        (L_G, 3, "HIDDEN"), (L_B, 4, "HIDDEN"), (L_LOW, 6, "HIDDEN"), (L_DONG, 5, "DASHED"), (L_WARN, 1, "CONTINUOUS"),
+                        (L_CG, 6, "CONTINUOUS"), (L_GG, 3, "CENTER"), (L_BG, 4, "CENTER"), (L_WG, 30, "CENTER"), (L_WGAP, 1, "CONTINUOUS")):
     doc.layers.add(name, color=color, linetype=lt)
+
+
+def wall_centerlines(m):
+    """벽 짝(평행 두 선, 두께 th) → 중심선(두 선 사이 th/2). 짝 없는 단일선은 제외. 같은 선 위 조각은 합침."""
+    con, th, pair = m["con"], np.asarray(m["con_th"]), np.asarray(m.get("con_pair", np.full(len(m["con"]), -1)))
+    items = []
+    for i in range(len(con)):
+        j = int(pair[i]) if i < len(pair) else -1
+        if j < 0 or not np.isfinite(th[i]):
+            continue
+        a = con[i, :2]; b = con[i, 2:]
+        d = unit(b - a); nrm = np.array([-d[1], d[0]])
+        mj = (con[j, :2] + con[j, 2:]) / 2
+        sgn = 1.0 if np.dot(mj - a, nrm) > 0 else -1.0
+        o = nrm * sgn * (th[i] / 2)
+        items.append({"a": a + o, "b": b + o})
+    return E.merge_collinear(items, tol_perp=40.0) if items else []
+
+
+def wall_gaps(lines, gap_min=50.0, gap_max=3000.0, tol_perp=40.0):
+    """같은 직선 위 벽 중심선 조각 사이의 빈 구간(gap_min~gap_max) → 끊김 강조 선"""
+    if len(lines) < 2:
+        return []
+    geoms = [LineString([tuple(w["a"]), tuple(w["b"])]) for w in lines]
+    tree = STRtree(geoms)
+    cos_tol = math.cos(math.radians(1.5)); out = []; seen = set()
+    for i, w in enumerate(lines):
+        a = np.asarray(w["a"]); b = np.asarray(w["b"]); d = unit(b - a); L = float(np.linalg.norm(b - a))
+        for j in tree.query(geoms[i].buffer(gap_max)):
+            j = int(j)
+            if j == i or (min(i, j), max(i, j)) in seen:
+                continue
+            o = lines[j]; a2 = np.asarray(o["a"]); b2 = np.asarray(o["b"]); d2 = unit(b2 - a2)
+            if abs(float(np.dot(d, d2))) < cos_tol:
+                continue
+            w1 = a2 - a; w2 = b2 - a
+            if abs(w1[0] * d[1] - w1[1] * d[0]) > tol_perp or abs(w2[0] * d[1] - w2[1] * d[0]) > tol_perp:
+                continue
+            s0, s1 = sorted([float(np.dot(w1, d)), float(np.dot(w2, d))])
+            gap = s0 - L if s0 > L else (-s1 if s1 < 0 else -1.0)
+            if gap_min <= gap <= gap_max:
+                seen.add((min(i, j), max(i, j)))
+                out.append((a + d * L, a + d * s0) if s0 > L else (a + d * s1, a))
+    return out
+
+
+def add_gen(blk, m, G, B, dx, dy):
+    """2단계 맨 끝(피드백 e4cc34): COLUMN(GEN) 기둥 안 X / GIRDER(GEN)·BEAM(GEN) 중심선 / WALL(GEN) 벽 중심선 + 끊김 강조"""
+    n = 0
+    for c in m["cols"]:
+        P4 = np.asarray(c["poly"][:4], dtype=float); ctr = np.array([c["cx"], c["cy"]])
+        Q = ctr + (P4 - ctr) * 0.9  # 기둥 안쪽(90%)에서 대각선 X → 기둥 밖으로 나가지 않음
+        blk.add_line((Q[0][0] + dx, Q[0][1] + dy), (Q[2][0] + dx, Q[2][1] + dy), dxfattribs={"layer": L_CG})
+        blk.add_line((Q[1][0] + dx, Q[1][1] + dy), (Q[3][0] + dx, Q[3][1] + dy), dxfattribs={"layer": L_CG}); n += 2
+    for s in G:
+        blk.add_line((s[0], s[1]), (s[2], s[3]), dxfattribs={"layer": L_GG}); n += 1
+    for s in B:
+        blk.add_line((s[0], s[1]), (s[2], s[3]), dxfattribs={"layer": L_BG}); n += 1
+    wl = wall_centerlines(m)
+    for w in wl:
+        blk.add_line((w["a"][0] + dx, w["a"][1] + dy), (w["b"][0] + dx, w["b"][1] + dy), dxfattribs={"layer": L_WG}); n += 1
+    gaps = wall_gaps(wl)
+    for p, q in gaps:
+        blk.add_line((p[0] + dx, p[1] + dy), (q[0] + dx, q[1] + dy), dxfattribs={"layer": L_WGAP, "lineweight": 50}); n += 1
+    print(f"  GEN 중심선 {n}개 (기둥 {len(m['cols'])} 거더 {len(G)} 보 {len(B)} 벽 {len(wl)} 끊김 {len(gaps)})", flush=True)
+    return n
 
 
 def add_warnings(blk, R, m, dx, dy):
@@ -148,6 +217,7 @@ def add_stage2(blk, N, R, shift):
         blk.add_lwpolyline([(x + dx, y + dy) for x, y in dg.exterior.coords], close=True, dxfattribs={"layer": L_DONG})
     nw = add_warnings(blk, R, m, dx, dy)
     print(f"  경고 표시 {nw}개", flush=True)
+    add_gen(blk, m, G, B, dx, dy)
     return n_low, ng, nb
 
 
