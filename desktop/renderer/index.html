@@ -33,6 +33,7 @@
   <section id="empty" class="empty hidden">
     <button id="btnStartEmpty" class="btn big">작업 시작</button>
     <p class="hint">DWG 또는 DXF 도면 1개를 선택하면 골조·거더·보 DXF 가 만들어집니다.</p>
+    <button id="btnFeedbackEmpty" class="btn ghost small">✎ 피드백 보내기 (도면 작업 없이)</button>
   </section>
 
   <!-- 작업이 있을 때: 왼쪽 목록 + 오른쪽 상세 -->
@@ -40,22 +41,69 @@
     <aside class="side">
       <ul id="jobList" class="joblist"></ul>
       <button id="btnStart" class="btn wide">+ 작업 시작</button>
+      <button id="btnFeedback" class="btn ghost wide small">✎ 피드백 보내기</button>
     </aside>
     <main id="detail" class="detail"></main>
   </section>
 
   <!-- 정보 패널 -->
   <section id="info" class="info hidden">
-    <h3>정보</h3>
+    <h3>설정</h3>
+    <p class="hint">모든 도면에 공통으로 적용되는 값만 둡니다. 저장하면 <b>다음 작업부터</b> 적용됩니다.</p>
+    <div class="setgrp">
+      <h4>실행 범위 — 어디까지 진행하고 저장할지</h4>
+      <div class="radios col" id="setStage">
+        <label><input type="radio" name="stage" value="1" /> 1단계까지 — 골조·중심선·OPEN 추출 후 DXF 저장</label>
+        <label><input type="radio" name="stage" value="2" /> 2단계까지 — 거더·보 생성 후 DXF 저장</label>
+        <label><input type="radio" name="stage" value="3" /> 3단계까지 — MIDAS GEN MGT 까지 생성 (기본)</label>
+      </div>
+    </div>
+    <div class="setgrp" id="setBeamGrp">
+      <h4>보(BEAM)</h4>
+      <label class="chk"><input type="checkbox" id="optBeams" /> 2단계에서 보 생성 <span class="hint inline">(끄면 거더만 생성: BEAM·BEAM(GEN) 레이어와 MGT 보 요소 없음)</span></label>
+      <div id="beamNums" class="nums">
+        <label><span>보를 두는 기준 거더 길이</span><input type="number" data-key="보_기준_거더길이" min="100" step="100" inputmode="numeric" /><em>mm</em><i class="dflt"></i></label>
+        <label><span>보를 두는 최소 베이 폭</span><input type="number" data-key="보_베이폭_최소" min="100" step="100" inputmode="numeric" /><em>mm</em><i class="dflt"></i></label>
+        <label><span>보 2개(3등분) 기준 베이 폭</span><input type="number" data-key="보_베이폭_2개" min="100" step="100" inputmode="numeric" /><em>mm</em><i class="dflt"></i></label>
+        <label><span>보 3개(4등분) 기준 베이 폭</span><input type="number" data-key="보_베이폭_3개" min="100" step="100" inputmode="numeric" /><em>mm</em><i class="dflt"></i></label>
+        <p class="hint">베이 폭 D 가 기준 거더 길이보다 길면 거더와 평행한 보를 D/2 에 1개, 2개 기준 이상이면 D/3 마다 2개, 3개 기준 이상이면 3개 둡니다.</p>
+      </div>
+    </div>
+    <div class="row gap">
+      <button id="setSave" class="btn small">저장</button>
+      <button id="setReset" class="btn ghost small">기본값으로</button>
+      <span id="setMsg" class="msg"></span>
+    </div>
+
+    <h3 class="sub">정보</h3>
     <div class="row gap">
       <button id="btnUpdate" class="btn ghost small">업데이트 확인</button>
       <span id="updMsg" class="msg"></span>
     </div>
     <div class="row gap"><button id="btnData" class="btn ghost small">데이터 폴더 열기</button></div>
     <p class="hint" id="verInfo"></p>
-    <p class="hint">생성 규칙은 모든 도면에 공통으로 적용되는 내부 기본값을 씁니다. 전문가 피드백이 쌓이면 필요한 옵션이 이 화면에 추가됩니다.</p>
     <div class="row"><button id="btnInfoClose" class="btn small">닫기</button></div>
   </section>
+
+  <!-- 피드백 패널: 도면 작업 없이 보내는 피드백(프로그램 화면·기능 요청 / 생성 규칙 의견) -->
+  <section id="general" class="info hidden">
+    <h3>피드백 보내기</h3>
+    <p class="hint">도면 작업과 상관없이 보낼 수 있습니다. 버튼 위치·화면 배치·기능 추가 같은 <b>프로그램</b> 의견과, 거더·보 생성 <b>규칙</b> 의견 모두 받습니다. 도면 파일은 첨부되지 않습니다(특정 결과에 대한 의견은 작업 카드의 피드백으로).</p>
+    <div class="radios" id="gfKind">
+      <label><input type="radio" name="gkind" value="ui" checked /> 프로그램 화면·기능 (버튼 위치·레이아웃·기능 추가·수정)</label>
+      <label><input type="radio" name="gkind" value="rule" /> 생성 규칙·결과 (모든 도면 공통)</label>
+      <label><input type="radio" name="gkind" value="unknown" /> 모름</label>
+    </div>
+    <textarea id="gfText" rows="7" placeholder="예) 결과 DXF 다운로드 버튼을 목록 위쪽으로 옮기고 싶다.&#10;예) 작업 목록을 오른쪽에, 상세를 왼쪽에 두는 배치가 편하다.&#10;예) 보 분할 기준 길이를 설정에서 바꿀 수 있게 해 달라."></textarea>
+    <p class="hint" id="gfAuto"></p>
+    <div class="row gap">
+      <button id="gfSend" class="btn">전송하기</button>
+      <button id="gfClose" class="btn ghost small">닫기</button>
+      <span id="gfMsg" class="msg"></span>
+    </div>
+    <div id="gfHistory" class="gf-history"></div>
+  </section>
+  <script src="classify.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

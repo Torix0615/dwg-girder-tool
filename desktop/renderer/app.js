@@ -23,11 +23,16 @@ btnPin.addEventListener('click', async () => {
   btnPin.classList.toggle('on', on);
 });
 let infoOpen = false;
+let generalOpen = false;
 async function showInfo(on) {
   infoOpen = on;
+  if (on) generalOpen = false;
   $('#info').classList.toggle('hidden', !on);
+  $('#general').classList.toggle('hidden', !generalOpen);
   render();
   if (on) {
+    $('#setMsg').textContent = '';
+    fillSettings(await api.getSettings());
     const v = await api.versions();
     $('#verInfo').textContent = `프로그램 v${v.shell} · 스크립트 v${v.app} · 런타임 ${v.runtime} · 데이터 폴더 ${v.root}`;
   }
@@ -36,6 +41,139 @@ $('#btnInfo').addEventListener('click', () => showInfo(!infoOpen));
 $('#btnInfoClose').addEventListener('click', () => showInfo(false));
 $('#btnData').addEventListener('click', () => api.openDataFolder());
 $('#btnUpdate').addEventListener('click', () => api.updateCheck());
+
+// ---- 설정(실행 범위 / 보 생성 / 보 간격 기준): userData/config.json 에 저장, 다음 작업부터 적용
+let settingDefaults = {};
+function fillSettings({ values, defaults }) {
+  settingDefaults = defaults || {};
+  const stage = String(values['실행_단계'] || 3);
+  for (const r of document.querySelectorAll('input[name=stage]')) r.checked = r.value === stage;
+  $('#optBeams').checked = Boolean(values['보_생성']);
+  for (const inp of document.querySelectorAll('#beamNums input[data-key]')) {
+    inp.value = values[inp.dataset.key] ?? '';
+    inp.classList.remove('changed');
+    inp.parentElement.querySelector('.dflt').textContent = `기본 ${settingDefaults[inp.dataset.key] ?? '-'}`;
+  }
+  settingsVisibility();
+}
+function settingsVisibility() {
+  const stage = Number(document.querySelector('input[name=stage]:checked')?.value || 3);
+  $('#setBeamGrp').classList.toggle('hidden', stage < 2); // 1단계까지만이면 보 설정은 의미 없음
+  $('#beamNums').classList.toggle('hidden', !$('#optBeams').checked); // 보를 끄면 간격 옵션 숨김
+}
+function readSettings() {
+  const vals = { 실행_단계: Number(document.querySelector('input[name=stage]:checked')?.value || 3), 보_생성: $('#optBeams').checked };
+  for (const inp of document.querySelectorAll('#beamNums input[data-key]')) {
+    const n = Number(inp.value);
+    if (Number.isFinite(n) && n >= 100) vals[inp.dataset.key] = Math.round(n);
+  }
+  return vals;
+}
+$('#setStage').addEventListener('change', settingsVisibility);
+$('#optBeams').addEventListener('change', settingsVisibility);
+for (const inp of document.querySelectorAll('#beamNums input[data-key]')) {
+  inp.addEventListener('input', () => {
+    inp.value = inp.value.replace(/[^\d]/g, ''); // 숫자만
+    inp.classList.toggle('changed', Number(inp.value) !== Number(settingDefaults[inp.dataset.key]));
+  });
+}
+$('#setSave').addEventListener('click', async () => {
+  const bad = [...document.querySelectorAll('#beamNums input[data-key]')].filter((i) => !$('#beamNums').classList.contains('hidden') && !(Number(i.value) >= 100));
+  const m = $('#setMsg');
+  if (bad.length) {
+    m.textContent = '숫자(100 이상, mm)를 입력해 주세요';
+    m.className = 'msg err';
+    bad[0].focus();
+    return;
+  }
+  fillSettings(await api.setSettings(readSettings()));
+  m.textContent = '저장됨 — 다음 작업부터 적용';
+  m.className = 'msg ok';
+});
+$('#setReset').addEventListener('click', async () => {
+  fillSettings(await api.setSettings({ ...settingDefaults }));
+  $('#setMsg').textContent = '기본값으로 되돌림';
+  $('#setMsg').className = 'msg ok';
+});
+function optsLabel(o) {
+  if (!o) return '';
+  const parts = [];
+  if (o.stage && o.stage < 3) parts.push(`${o.stage}단계까지`);
+  if (o.beams === false && o.stage !== 1) parts.push('보 없음');
+  return parts.join(' · ');
+}
+
+// ---- 피드백 패널(도면 작업 없이): 종류 선택 + 내용 + 자동 분류 힌트 + 보낸 내역
+const KIND_LABEL = { ui: '프로그램 화면·기능', rule: '생성 규칙·결과', unknown: '모름' };
+let gfSending = false;
+function autoHint(text, el, chosen) {
+  const c = window.classifyFeedback(text);
+  let msg = '';
+  if (text.trim().length >= 6) {
+    if (c.category === 'ui') msg = `자동 분류: 프로그램 화면·기능 요청으로 보입니다 (${c.ui.slice(0, 4).join('·')}) → 프로그램 업데이트 대상`;
+    else if (c.category === 'rule') msg = `자동 분류: 생성 규칙·결과 의견으로 보입니다 (${c.rule.slice(0, 4).join('·')})`;
+    if (chosen && chosen !== 'unknown' && c.category !== 'unknown' && chosen !== c.category) msg += ` — 선택한 종류(${KIND_LABEL[chosen]})와 다릅니다. 보낸 뒤 개발자가 내용으로 최종 분류합니다.`;
+  }
+  el.textContent = msg;
+  el.classList.toggle('auto-ui', c.category === 'ui');
+  return c.category;
+}
+async function showGeneral(on) {
+  generalOpen = on;
+  if (on) infoOpen = false;
+  $('#general').classList.toggle('hidden', !on);
+  $('#info').classList.toggle('hidden', !infoOpen);
+  render();
+  if (on) {
+    renderHistory(await api.feedbackHistory());
+    $('#gfText').focus();
+  }
+}
+function renderHistory(items) {
+  const h = $('#gfHistory');
+  if (!items || !items.length) {
+    h.innerHTML = '';
+    return;
+  }
+  h.innerHTML =
+    `<h4>보낸 피드백 (최근 ${items.length}건)</h4>` +
+    items
+      .slice()
+      .reverse()
+      .map((it) => `<div class="gf-item"><div class="gf-meta"><span class="tag ${esc(it.category)}">${esc(KIND_LABEL[it.category] || it.category)}</span>${esc(fmtDate(it.at))}${it.id ? ' · 서버 접수' : it.file ? ' · 바탕화면 파일' : ''}</div>${esc(it.text)}</div>`)
+      .join('');
+}
+$('#btnFeedback').addEventListener('click', () => showGeneral(true));
+$('#btnFeedbackEmpty').addEventListener('click', () => showGeneral(true));
+$('#gfClose').addEventListener('click', () => showGeneral(false));
+$('#gfText').addEventListener('input', () => autoHint($('#gfText').value, $('#gfAuto'), $('input[name=gkind]:checked')?.value));
+$('#gfKind').addEventListener('change', () => autoHint($('#gfText').value, $('#gfAuto'), $('input[name=gkind]:checked')?.value));
+$('#gfSend').addEventListener('click', async () => {
+  const text = $('#gfText').value;
+  const m = $('#gfMsg');
+  if (!text.trim()) {
+    m.textContent = '내용을 적어 주세요';
+    m.className = 'msg err';
+    return;
+  }
+  if (gfSending) return;
+  gfSending = true;
+  $('#gfSend').disabled = true;
+  m.textContent = '전송 중…';
+  m.className = 'msg';
+  const category = $('input[name=gkind]:checked')?.value || 'unknown';
+  const r = await api.sendFeedback({ text, scope: 'general', category, jobId: null });
+  gfSending = false;
+  $('#gfSend').disabled = false;
+  m.textContent = r.message;
+  m.className = 'msg ' + (r.ok ? 'ok' : 'err');
+  if (r.sent) {
+    $('#gfText').value = '';
+    $('#gfAuto').textContent = '';
+    renderHistory(await api.feedbackHistory());
+  }
+});
+api.on('open-feedback', () => showGeneral(true));
 
 // ---- 작업 시작 / 드롭(1개)
 $('#btnStartEmpty').addEventListener('click', () => api.startJob());
@@ -83,8 +221,9 @@ api.on('feedback-progress', (p) => {
 
 function render() {
   const has = state.jobs.length > 0;
-  $('#empty').classList.toggle('hidden', has || infoOpen);
-  $('#work').classList.toggle('hidden', !has || infoOpen);
+  const panel = infoOpen || generalOpen;
+  $('#empty').classList.toggle('hidden', has || panel);
+  $('#work').classList.toggle('hidden', !has || panel);
   if (!has) return;
   if (!state.jobs.some((j) => j.id === selected)) selected = state.jobs[state.jobs.length - 1].id;
   renderList();
@@ -98,7 +237,8 @@ function renderList() {
     const li = document.createElement('li');
     li.className = 'jobitem ' + j.state + (j.id === selected ? ' sel' : '');
     const st = j.state === 'queued' ? '대기' : j.state === 'running' ? '진행 중' : j.state === 'done' ? (j.feedback && j.feedback.sent ? '완료 · 피드백 전송됨' : '완료') : j.state === 'failed' ? (j.failKind === 'input' ? '실패 · 도면 문제' : j.errorReport && j.errorReport.sent ? '실패 · 오류 보고됨' : '실패') : '취소';
-    li.innerHTML = `<div class="ji-name" title="${esc(j.src)}">${esc(j.name)}</div><div class="ji-state">${esc(st)}</div>`;
+    const ol = optsLabel(j.opts);
+    li.innerHTML = `<div class="ji-name" title="${esc(j.src)}">${esc(j.name)}</div><div class="ji-state">${esc(st)}${ol ? `<span class="ji-opts">${esc(ol)}</span>` : ''}</div>`;
     if (j.state !== 'running') {
       const x = document.createElement('button');
       x.className = 'ji-del';
@@ -136,7 +276,7 @@ function renderDetail(j) {
   const prog = progress[j.id];
   el.innerHTML = `
     <h2 class="d-name" title="${esc(j.src)}">${esc(j.name)}</h2>
-    <div class="d-status ${j.state}">${esc(status)}</div>
+    <div class="d-status ${j.state}">${esc(status)}${optsLabel(j.opts) ? `<span class="d-opts" title="이 작업에 적용된 설정">${esc(optsLabel(j.opts))}</span>` : ''}</div>
     ${j.state === 'running' || j.state === 'queued' ? `<div class="bar"><i style="width:${pct}%"></i></div><pre class="d-tail">${esc((j.tail || []).slice(-5).join('\n'))}</pre><div class="row"><button class="btn small danger" data-act="cancel">작업 취소</button></div>` : ''}
     ${
       j.state === 'failed'
@@ -158,6 +298,7 @@ function renderDetail(j) {
           <label><input type="radio" name="scope" value="unknown" ${d.scope === 'unknown' ? 'checked' : ''} ${sent ? 'disabled' : ''}/> 모름</label>
         </div>
         <textarea rows="6" ${sent ? 'disabled' : ''} placeholder="예) 램프 구간의 곡선 보가 생성되지 않음. 기둥 없는 구역은 벽을 따라 거더가 있어야 함.">${esc(sent ? j.feedback.text : d.text)}</textarea>
+        <p class="hint fb-auto"></p>
         <div class="row gap">
           <button class="btn" data-act="send" ${sent || sending[j.id] ? 'disabled' : ''}>${sent ? '전송 완료' : sending[j.id] ? '전송 중…' : '전송하기'}</button>
           <span class="msg ${sent ? 'ok' : ''}">${esc(sent ? `${fmtDate(j.feedback.at)} 전송됨${j.feedback.file ? ' (바탕화면 파일)' : ''}` : prog ? prog.message : '')}</span>
@@ -183,6 +324,14 @@ function renderDetail(j) {
       s.textContent = r.message;
     }
   });
+  // 작업 카드 피드백에도 자동 분류 힌트: 프로그램 화면·기능 내용이면 알려 주고 그대로 전송(개발 PC 에서 프로그램 요청으로 표시됨)
+  const fbTa = el.querySelector('.fb textarea');
+  const fbAuto = el.querySelector('.fb-auto');
+  if (fbTa && fbAuto) {
+    const upd = () => autoHint(fbTa.value, fbAuto, null);
+    upd();
+    if (!sent) fbTa.addEventListener('input', upd);
+  }
   el.querySelector('[data-act=send]')?.addEventListener('click', async () => {
     const text = el.querySelector('textarea').value;
     const scope = el.querySelector('input[name=scope]:checked')?.value || 'unknown';
@@ -193,7 +342,7 @@ function renderDetail(j) {
     drafts[j.id] = { text, scope };
     sending[j.id] = true;
     render();
-    const r = await api.sendFeedback({ text, scope, jobId: j.id });
+    const r = await api.sendFeedback({ text, scope, category: window.classifyFeedback(text).category, jobId: j.id });
     delete sending[j.id];
     delete progress[j.id];
     if (r.sent) delete drafts[j.id];

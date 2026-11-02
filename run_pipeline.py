@@ -4,6 +4,7 @@ python run_pipeline.py <원본.dwg|.dxf> [--out 폴더] [--config config.json] [
 중간 파일은 work/<원본이름>/ (--keep 없으면 완료 후 삭제).
 """
 import sys, os, subprocess, time, shutil, argparse, traceback, platform
+from cfg import load_cfg
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 배포 패키지(<루트>\app\run_pipeline.py + <루트>\runtime\python.exe)면 루트 기준, 아니면 개발 폴더 기준
@@ -20,10 +21,13 @@ outdir = os.path.abspath(a.out) if a.out else os.path.dirname(src)
 work = os.path.join(ROOT, "work", f"{base}_{os.getpid()}")  # 같은 파일을 동시에 돌려도 충돌 없게 실행별 폴더
 cfg_path = os.path.abspath(a.config) if a.config else (os.path.join(ROOT, "config.json") if ROOT != HERE else None)
 cfg_args = ["--config", cfg_path] if cfg_path and os.path.exists(cfg_path) else []
+CFG = load_cfg(cfg_path if cfg_args else None)
+STAGE = int(CFG.get("실행_단계", 3)) if str(CFG.get("실행_단계", 3)) in ("1", "2", "3") else 3  # 1=골조 추출까지, 2=거더·보까지, 3=MGT 까지
+BEAMS = bool(CFG.get("보_생성", True))
 env = dict(os.environ, PYTHONUTF8="1")
 _ver = os.path.join(HERE, "version.txt")
 APP_VER = open(_ver, encoding="utf-8").read().strip() if os.path.exists(_ver) else "dev"
-log = [f"입력: {src}\n출력 폴더: {outdir}\n버전: {APP_VER}\n설정: {cfg_path or '(기본값)'}\npython: {sys.executable} ({platform.python_version()})\n시작: {time.strftime('%Y-%m-%d %H:%M:%S')}"]
+log = [f"입력: {src}\n출력 폴더: {outdir}\n버전: {APP_VER}\n설정: {cfg_path or '(기본값)'}\n실행 범위: {STAGE}단계까지 / 보 생성: {'켬' if BEAMS else '끔'}\npython: {sys.executable} ({platform.python_version()})\n시작: {time.strftime('%Y-%m-%d %H:%M:%S')}"]
 T0 = time.time()
 REPORT = os.path.join(outdir, f"{base}_골조거더보_report.txt")
 LOGCOPY = os.path.join(ROOT, "logs", time.strftime("%Y%m%d_%H%M%S") + f"_{base}_report.txt")  # 피드백 zip 에 넣을 사본
@@ -107,15 +111,21 @@ def main():
     step("원본 전개(블록 재귀)", py + ["dump.py", dxf, d1, "--msp"])
     step("1단계 골조·중심선·OPEN 선별", py + ["stage1_select.py", d1, cand] + cfg_args)
     step("2단계 구조 모델(기둥·벽·동)", py + ["stage2_model.py", cand, model] + cfg_args)
-    step("2단계 거더·보 생성", py + ["stage2_gen.py", model, res, "--report", os.path.join(work, "gen_report.txt")] + cfg_args)
+    if STAGE >= 2:
+        step("2단계 거더·보 생성", py + ["stage2_gen.py", model, res, "--report", os.path.join(work, "gen_report.txt")] + cfg_args)
+    else:
+        step("2단계 건너뜀(설정: 1단계까지 실행)", py + ["stage2_gen.py", model, res, "--skip"] + cfg_args)
     step("최종 DXF 작성", py + ["final_write.py", cand, model, res, final] + cfg_args)
     dst = os.path.join(outdir, f"{base}_골조거더보.dxf")
     shutil.copyfile(final, dst)
-    # 3단계: MIDAS Gen MGT
-    mgt = os.path.join(work, "model.mgt")
-    step("3단계 MIDAS GEN MGT 작성", py + ["stage3_mgt.py", cand, model, res, mgt, "--report", os.path.join(work, "mgt_report.txt")] + cfg_args)
-    if os.path.exists(mgt):
-        shutil.copyfile(mgt, os.path.join(outdir, f"{base}_MIDAS.mgt"))
+    # 3단계: MIDAS Gen MGT (설정 실행_단계 3 일 때만)
+    if STAGE >= 3:
+        mgt = os.path.join(work, "model.mgt")
+        step("3단계 MIDAS GEN MGT 작성", py + ["stage3_mgt.py", cand, model, res, mgt, "--report", os.path.join(work, "mgt_report.txt")] + cfg_args)
+        if os.path.exists(mgt):
+            shutil.copyfile(mgt, os.path.join(outdir, f"{base}_MIDAS.mgt"))
+    else:
+        log.append(f"3단계 MGT 건너뜀(설정: {STAGE}단계까지 실행)")
     if a.html:
         hdir = os.path.join(work, "html")
         step("층별 도면 HTML", py + ["render_html.py", final, hdir])

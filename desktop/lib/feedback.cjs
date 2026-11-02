@@ -9,8 +9,10 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 const { Readable, Transform } = require('stream');
 const { readText } = require('./engine.cjs');
+const classify = require('../renderer/classify.js'); // 프로그램 화면·기능 / 생성 규칙 자동 분류(렌더러와 공용)
 
-const SCOPE_LABEL = { file: '이 도면에만 해당', all: '모든 도면에 공통', unknown: '모름', error: '자동 오류 보고' };
+const SCOPE_LABEL = { file: '이 도면에만 해당', all: '모든 도면에 공통', unknown: '모름', error: '자동 오류 보고', general: '도면 작업 없이 보낸 피드백' };
+const KIND_LABEL = classify.LABEL; // ui / rule / unknown
 
 function desktopDir() {
   const r = spawnSync('powershell', ['-NoProfile', '-Command', '[Environment]::GetFolderPath("Desktop")'], { windowsHide: true, encoding: 'utf8' });
@@ -24,11 +26,16 @@ function serverInfo(engine, bundledApp) {
   return /^https?:\/\//.test(url) ? { url: url.replace(/\/+$/, '') } : null;
 }
 
-function buildZip({ root, engine, text, scope, job, log, out }) {
+function buildZip({ root, engine, text, scope, category, job, log, out }) {
   const tmp = path.join(root, 'tmp');
   fs.mkdirSync(tmp, { recursive: true });
-  const head = [`구분: ${SCOPE_LABEL[scope] || scope || '-'}`, `대상 도면: ${job.src}`, `결과: ${job.result ? path.basename(job.result) : '(실패)'} / ${job.message}`];
-  const attach = [job.src, job.result, job.mgt, job.report].filter((p) => p && fs.existsSync(p));
+  const auto = classify(text);
+  const head = [`구분: ${SCOPE_LABEL[scope] || scope || '-'}`];
+  if (category) head.push(`종류(사용자 선택): ${KIND_LABEL[category] || category}`);
+  head.push(`자동 분류: ${KIND_LABEL[auto.category]} (UI: ${auto.ui.join('·') || '-'} / 규칙: ${auto.rule.join('·') || '-'})`);
+  if (job) head.push(`대상 도면: ${job.src}`, `결과: ${job.result ? path.basename(job.result) : '(실패)'} / ${job.message}`);
+  else head.push('대상 도면: (없음 — 도면 작업 없이 보낸 피드백)');
+  const attach = job ? [job.src, job.result, job.mgt, job.report].filter((p) => p && fs.existsSync(p)) : [];
   const tf = path.join(tmp, 'feedback.txt');
   fs.writeFileSync(tf, head.join('\n') + '\n\n' + String(text || '').trim() + '\n', 'utf8');
   const extra = ['데스크탑 로그 최근 50줄:'];
@@ -80,26 +87,33 @@ async function upload({ srv, file, meta, onProgress }) {
 }
 
 /** @returns {Promise<{ok:boolean, message:string, file?:string, id?:string, sent:boolean}>} */
-async function send({ root, engine, bundledApp, appVersion, text, scope, job, log, onProgress = () => {} }) {
-  if (!job) return { ok: false, sent: false, message: '작업을 찾을 수 없습니다' };
-  if (job.feedback && job.feedback.sent) return { ok: false, sent: true, message: '이미 전송한 작업입니다' };
+/**
+ * job 이 있으면 작업 카드 피드백(원본·결과 첨부), scope='general' 이면 도면 작업 없이 보내는 피드백(첨부 없음).
+ * category(ui/rule/unknown) = 사용자 선택(일반 패널) 또는 앱의 자동 분류(작업 카드). 메타에 category_auto 도 함께 보내 개발 PC 가 "프로그램(UI·기능)" 요청을 가려낸다.
+ */
+async function send({ root, engine, bundledApp, appVersion, text, scope, category, job, log, onProgress = () => {} }) {
+  if (!job && scope !== 'general') return { ok: false, sent: false, message: '작업을 찾을 수 없습니다' };
+  if (job && job.feedback && job.feedback.sent) return { ok: false, sent: true, message: '이미 전송한 작업입니다' };
   if (!String(text || '').trim()) return { ok: false, sent: false, message: '내용이 비어 있습니다' };
   const stamp = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().replace(/[-:T]/g, '').slice(0, 13).replace(/(\d{8})(\d{4})/, '$1_$2');
   const name = `골조거더보_피드백_${stamp}.zip`;
   const srv = serverInfo(engine, bundledApp);
   onProgress({ progress: 0, message: '파일 묶는 중…' });
-  const zip = buildZip({ root, engine, text, scope, job, log, out: path.join(root, 'tmp', name) });
+  const zip = buildZip({ root, engine, text, scope, category, job, log, out: path.join(root, 'tmp', name) });
   const size = fs.statSync(zip).size;
   const at = new Date().toISOString();
   const base = { text: String(text).slice(0, 2000), scope, at };
   if (srv) {
-    const meta = { version: appVersion, app: engine.versions().app, scope, job: path.basename(job.src), pc: os.hostname(), text: String(text).slice(0, 2000) };
+    const meta = {
+      kind: job ? 'feedback' : 'general', version: appVersion, app: engine.versions().app, scope, category: category || 'unknown', category_auto: classify(text).category,
+      job: job ? path.basename(job.src) : '-', pc: os.hostname(), text: String(text).slice(0, 2000),
+    };
     try {
       onProgress({ progress: 0, message: `전송 중 (${(size / 1e6).toFixed(1)} MB)` });
       const r = await upload({ srv, file: zip, meta, onProgress: (p) => onProgress({ progress: p, message: `전송 중 ${((p * size) / 1e6).toFixed(1)}/${(size / 1e6).toFixed(1)} MB` }) });
       fs.rmSync(zip, { force: true });
-      log('피드백 전송 완료', r.id, size);
-      engine.setFeedback(job.id, { ...base, sent: true, id: r.id });
+      log('피드백 전송 완료', r.id, size, job ? '' : '(일반)');
+      if (job) engine.setFeedback(job.id, { ...base, sent: true, id: r.id });
       return { ok: true, sent: true, id: r.id, message: `전송 완료 (${(size / 1e6).toFixed(1)} MB). 반영되면 자동 업데이트됩니다.` };
     } catch (e) {
       log('피드백 전송 실패', e);
@@ -114,7 +128,7 @@ async function send({ root, engine, bundledApp, appVersion, text, scope, job, lo
   } catch (e) {
     return { ok: false, sent: false, message: `전송 실패, 파일 저장도 실패: ${e.message}` };
   }
-  engine.setFeedback(job.id, { ...base, sent: true, file: out });
+  if (job) engine.setFeedback(job.id, { ...base, sent: true, file: out });
   return { ok: true, sent: true, file: out, message: `서버 전송이 안 되어 바탕화면에 저장했습니다: ${name} — 카카오톡·메일로 보내 주세요` };
 }
 

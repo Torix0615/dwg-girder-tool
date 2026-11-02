@@ -1,7 +1,7 @@
 'use strict';
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
-const CHANNELS = ['engine-state', 'update-status', 'install-progress', 'feedback-progress'];
+const CHANNELS = ['engine-state', 'update-status', 'install-progress', 'feedback-progress', 'open-feedback'];
 
 contextBridge.exposeInMainWorld('girder', {
   pathOf: (file) => webUtils.getPathForFile(file),
@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('girder', {
   openPath: (p) => ipcRenderer.invoke('open-path', p),
   showInFolder: (p) => ipcRenderer.invoke('show-in-folder', p),
   sendFeedback: (payload) => ipcRenderer.invoke('send-feedback', payload),
+  feedbackHistory: () => ipcRenderer.invoke('feedback-history'),
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  setSettings: (vals) => ipcRenderer.invoke('set-settings', vals),
   openDataFolder: () => ipcRenderer.invoke('open-data-folder'),
   updateCheck: () => ipcRenderer.invoke('update-check'),
   updateStatus: () => ipcRenderer.invoke('update-status'),

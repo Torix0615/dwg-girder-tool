@@ -2,6 +2,7 @@
 import json, os, sys
 
 DEFAULT = {
+    "실행_단계": 3, "보_생성": True,
     "층_제목_정규식": "평면도", "층_분리_간격": 10000, "도곽_인식": True, "도곽_최소변": 20000,
     "골조_색": 2, "중심선_색": 1, "중심선_선종류_정규식": "CEN|CENTER|DASHDOT|ISO04", "중심선_레이어_정규식": "CEN|AXIS|GRID", "중심선_색_필수": False, "중심선_반복블록_제외": True, "중심선_반복블록_기준": 2, "중심선_구조만": False, "제외_레이어_정규식": "FIN|HATCH|PAT|TXT|TEXT|DIM|AREA|NOTE|SYM|DOOR|LEVEL|CONTINUOUS|FURN|BUB|조적|MASN|BRICK", "OPEN_레이어_정규식": "OPEN",
     "동_벽체_레이어": "DEF-기준층 벽체", "기둥_라벨_레이어": "CHECK-지하주차장 기둥", "동_최소면적_m2": 150, "동_선_최대길이": 12000,

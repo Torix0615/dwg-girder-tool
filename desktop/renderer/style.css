@@ -94,6 +94,30 @@ textarea:disabled { opacity: .7; }
 .msg.err { color: var(--err); }
 .info { flex: 1; padding: 16px 18px; overflow: auto; }
 .info h3 { margin: 0 0 8px; }
+.info .radios { flex-direction: column; gap: 4px; }
+.info h3.sub { margin-top: 22px; padding-top: 12px; border-top: 1px solid var(--line); }
+.setgrp { margin: 10px 0 12px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.setgrp h4 { margin: 0 0 6px; font-size: 13px; }
+.chk { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.hint.inline { display: inline; margin: 0; }
+.nums { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.nums label { display: grid; grid-template-columns: 220px 110px 28px 1fr; align-items: center; gap: 6px; }
+.nums input[type=number] { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; text-align: right; user-select: text; }
+.nums input[type=number]:focus { outline: 1px solid var(--accent); }
+.nums input.changed { border-color: var(--accent); }
+.nums em { font-style: normal; color: var(--muted); font-size: 12px; }
+.nums i.dflt { font-style: normal; color: var(--muted); font-size: 11px; }
+.ji-opts, .d-opts { display: inline-block; font-size: 11px; color: var(--accent2); background: #1f2a3d; border-radius: 8px; padding: 0 7px; margin-left: 6px; vertical-align: middle; }
+/* 자동 분류 힌트(프로그램 화면·기능으로 보이면 파랑) */
+.hint.auto-ui { color: var(--accent2); }
+.gf-history { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.gf-history:empty { display: none; }
+.gf-history h4 { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+.gf-item { padding: 6px 8px; border-radius: 6px; background: var(--panel); margin-bottom: 4px; font-size: 12px; user-select: text; }
+.gf-item .gf-meta { color: var(--muted); font-size: 11px; margin-bottom: 2px; }
+.gf-item .gf-meta .tag { display: inline-block; padding: 0 6px; border-radius: 8px; background: var(--panel2); margin-right: 6px; }
+.gf-item .gf-meta .tag.ui { color: var(--accent2); }
+.gf-item .gf-meta .tag.rule { color: var(--accent); }
 input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }

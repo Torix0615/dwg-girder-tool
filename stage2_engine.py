@@ -31,6 +31,7 @@ class Params:
     PERP_MIN = 700.0    # 가까운 기둥의 횡 오차 허용
     WALL_MIN_LEN = 200.0
     WALL_CROSS_DEG = 35.0  # 벽이 광선과 이루는 최소 각(평행 벽 무시)
+    MAKE_BEAMS = True   # False 면 보를 만들지 않음(거더만, 설정 보_생성)
     SPLIT = 6000.0      # 보 분할 기준 거더 길이(이보다 긴 거더 옆 베이에 평행 보)
     D_MIN = 3000.0      # 베이 폭(반대편 경계까지) 최소
     D_TWO = 8700.0      # 베이 폭이 이 이상이면 보 2개(3등분)
@@ -211,7 +212,7 @@ def generate(cols, con, P=Params(), dong=None, con_th=None):
         walls_b = con[(Lc >= P.WALL_MIN_LEN) & (((th >= P.BEAM_WALL_TH) & (th <= 700)) | (np.isnan(th) & (Lc >= P.BEAM_WALL_SINGLE)))]
     else:
         walls_b = walls
-    beams = make_beams(girders, walls_b, P, cols) if girders else []
+    beams = make_beams(girders, walls_b, P, cols) if girders and P.MAKE_BEAMS else []
     if beams:
         beams = [b for b in resolve(girders + beams, P) if "xish" in b]  # 보는 거더·보와 간섭 없게(거더는 이미 확정)
     return girders, beams

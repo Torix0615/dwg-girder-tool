@@ -13,8 +13,15 @@ CFG, argv = pop_config_arg(sys.argv[1:])
 model_p, out_p = argv[0], argv[1]
 report = argv[argv.index("--report") + 1] if "--report" in argv else None
 M = pickle.load(open(model_p, "rb")); floors, model = M["floors"], M["model"]
+if "--skip" in argv:  # 실행_단계=1: 거더·보를 만들지 않고 빈 결과만(final_write 가 1단계 레이어만 쓰게)
+    pickle.dump({"result": {}, "floors": floors, "P": {}}, open(out_p, "wb"), protocol=5)
+    print("1단계까지만 실행: 거더·보 생성 건너뜀", flush=True)
+    if report:
+        open(report, "w", encoding="utf-8").write("1단계까지만 실행: 거더·보 생성 건너뜀\n")
+    sys.exit(0)
 
 P = E.Params()
+P.MAKE_BEAMS = bool(CFG.get("보_생성", True))
 P.ANG = float(CFG["거더_축각도_허용"]); P.LMAX = float(CFG["거더_최대길이"]); P.PERP_MIN = float(CFG["거더_횡오차_허용"])
 P.WALL_GIRDER = bool(CFG["거더_벽끝_사용"]); P.T_JUNCTION = bool(CFG["거더_T접합_사용"]); P.MIN_GIRDER = float(CFG["거더_최소길이"])
 P.SPLIT = float(CFG["보_기준_거더길이"]); P.D_MIN = float(CFG["보_베이폭_최소"]); P.D_TWO = float(CFG["보_베이폭_2개"]); P.D_THREE = float(CFG["보_베이폭_3개"])
@@ -26,6 +33,9 @@ P.OVERLAP_PERP = float(CFG.get("간섭_평행거리", 100)); P.MIN_PIECE = float
 lines = []
 def out(s):
     print(s, flush=True); lines.append(s)
+
+if not P.MAKE_BEAMS:
+    out("설정 보_생성=false: 보(BEAM) 없이 거더만 생성")
 
 order = [f["id"] for f in floors]
 anchor = {f["id"]: np.array(f["anchor"], dtype=float) for f in floors}

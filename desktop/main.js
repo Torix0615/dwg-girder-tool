@@ -119,6 +119,13 @@ function buildTrayMenu() {
   return Menu.buildFromTemplate([
     { label: '열기', click: () => showWindow() },
     { label: '작업 시작…', click: () => startJob() },
+    {
+      label: '피드백 보내기…',
+      click: () => {
+        showWindow();
+        send('open-feedback', {});
+      },
+    },
     { type: 'separator' },
     { label: '항상 위에', type: 'checkbox', checked: Boolean(settings.pinned), click: (m) => setPinned(m.checked) },
     { label: '업데이트 확인', click: () => updater.check() },
@@ -191,12 +198,22 @@ function registerIpc() {
   ipcMain.handle('download', (_e, id, kind) => download(id, kind));
   ipcMain.handle('open-path', (_e, p) => shell.openPath(p));
   ipcMain.handle('show-in-folder', (_e, p) => shell.showItemInFolder(p));
-  ipcMain.handle('send-feedback', (_e, { text, scope, jobId }) =>
-    require('./lib/feedback.cjs').send({
-      root: ROOT, engine, bundledApp: path.join(BUNDLED, 'app'), appVersion: app.getVersion(), text, scope, job: engine.job(jobId), log,
+  // 피드백: jobId 가 있으면 작업 카드(원본·결과 첨부), 없으면 도면 작업 없이 보내는 피드백(scope=general, 첨부 없음 → 보낸 내역을 settings 에 보관)
+  ipcMain.handle('send-feedback', async (_e, { text, scope, category, jobId }) => {
+    const job = jobId == null ? null : engine.job(jobId);
+    const r = await require('./lib/feedback.cjs').send({
+      root: ROOT, engine, bundledApp: path.join(BUNDLED, 'app'), appVersion: app.getVersion(), text, scope, category, job, log,
       onProgress: (p) => send('feedback-progress', { jobId, ...p }),
-    })
-  );
+    });
+    if (!job && r.sent) {
+      settings.feedbackHistory = [...(settings.feedbackHistory || []), { at: new Date().toISOString(), text: String(text).slice(0, 500), category: category || 'unknown', id: r.id, file: r.file }].slice(-30);
+      saveSettings();
+    }
+    return r;
+  });
+  ipcMain.handle('feedback-history', () => settings.feedbackHistory || []);
+  ipcMain.handle('get-settings', () => engine.getSettings());
+  ipcMain.handle('set-settings', (_e, vals) => engine.setSettings(vals || {}));
   ipcMain.handle('open-data-folder', () => shell.openPath(ROOT));
   ipcMain.handle('update-check', () => updater.check());
   ipcMain.handle('update-status', () => updater.status());

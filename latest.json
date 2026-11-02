@@ -1,6 +1,15 @@
 {
  "notes": [
   {
+   "version": "1.4.0",
+   "date": "2026-11-02",
+   "items": [
+    "설정 화면(⚙) 추가: 실행 범위(1단계 골조 추출까지 / 2단계 거더·보까지 / 3단계 MGT 까지), 보(BEAM) 생성 켬/끔, 보 간격 기준 4개(기준 거더 길이·최소 베이 폭·보 2개·보 3개 기준) — 저장하면 다음 작업부터 적용, 작업 카드에 적용 설정 표시(피드백 3765c4)",
+    "도면 작업 없이 보내는 피드백: 첫 화면·작업 목록 아래·트레이 메뉴의 '피드백 보내기' → 종류(프로그램 화면·기능 / 생성 규칙·결과 / 모름) 선택 후 전송, 보낸 내역 표시",
+    "피드백 내용 자동 분류: 버튼 위치·레이아웃·기능 추가 같은 프로그램 요청은 '프로그램 화면·기능'으로 표시되어 프로그램 업데이트로 반영"
+   ]
+  },
+  {
    "version": "1.3.0",
    "date": "2026-11-01",
    "items": [
@@ -98,12 +107,12 @@
    ]
   }
  ],
- "app_version": "1.3.0",
- "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.3.0/app.zip",
+ "app_version": "1.4.0",
+ "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.4.0/app.zip",
  "runtime_version": "1",
  "runtime_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/runtime-v1/runtime.zip",
- "shell_version": "1.2.3",
- "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.2.3/GirderTool-Setup-1.2.3.exe",
- "shell_sha256": "5cb8051cc5084992656e446cfc22ae52e26a2bbb58d218c28754e601c16318f6",
- "shell_size": 145790204
+ "shell_version": "1.4.0",
+ "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.4.0/GirderTool-Setup-1.4.0.exe",
+ "shell_sha256": "99599ffb948b36ee23b0b04c9cc307c059f8a15a81debefaca9016544a42838e",
+ "shell_size": 145801995
 }

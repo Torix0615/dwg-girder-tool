@@ -127,6 +127,44 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     if (!fs.existsSync(CFG) && fs.existsSync(dflt)) fs.copyFileSync(dflt, CFG);
   }
 
+  /** 앱 설정 화면에 노출하는 설정 키(모든 도면 공통인 것만, FEEDBACK_LOOP 3절). 값은 userData/config.json 에 저장, 다음 작업부터 적용 */
+  const SETTING_KEYS = ['실행_단계', '보_생성', '보_기준_거더길이', '보_베이폭_최소', '보_베이폭_2개', '보_베이폭_3개'];
+  const SETTING_FALLBACK = { 실행_단계: 3, 보_생성: true, 보_기준_거더길이: 4000, 보_베이폭_최소: 3000, 보_베이폭_2개: 8700, 보_베이폭_3개: 14000 };
+  function readJson(p) {
+    try {
+      return JSON.parse(fs.readFileSync(p, 'utf8').replace(/^﻿/, ''));
+    } catch {
+      return null;
+    }
+  }
+  function getSettings() {
+    ensureConfig();
+    const dflt = { ...SETTING_FALLBACK, ...pick(readJson(path.join(APP, 'config.default.json')) || {}) };
+    const cur = { ...dflt, ...pick(readJson(CFG) || {}) };
+    return { values: cur, defaults: dflt };
+  }
+  function pick(obj) {
+    const o = {};
+    for (const k of SETTING_KEYS) if (obj[k] !== undefined) o[k] = obj[k];
+    return o;
+  }
+  function setSettings(vals) {
+    ensureConfig();
+    const cfg = readJson(CFG) || {};
+    for (const k of SETTING_KEYS) {
+      if (vals[k] === undefined) continue;
+      if (k === '보_생성') cfg[k] = Boolean(vals[k]);
+      else if (k === '실행_단계') cfg[k] = [1, 2, 3].includes(Number(vals[k])) ? Number(vals[k]) : 3;
+      else {
+        const n = Number(vals[k]);
+        if (Number.isFinite(n) && n >= 100) cfg[k] = Math.round(n);
+      }
+    }
+    fs.writeFileSync(CFG, JSON.stringify(cfg, null, 2) + '\n');
+    log('설정 저장', pick(cfg));
+    return getSettings();
+  }
+
   function publicJob(j) {
     const { log: _l, ...rest } = j;
     return { ...rest, tail: j.log.slice(-8) };
@@ -173,7 +211,9 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     current = j;
     j.state = 'running';
     j.started = Date.now();
-    j.total = path.extname(j.src).toLowerCase() === '.dwg' ? 8 : 7; // 변환·XREF·전개·1단계·모델·거더보·DXF·MGT
+    const st = getSettings().values;
+    j.opts = { stage: Number(st['실행_단계']) || 3, beams: Boolean(st['보_생성']) }; // 이 작업에 적용된 실행 범위·보 생성(카드 표시용)
+    j.total = (path.extname(j.src).toLowerCase() === '.dwg' ? 1 : 0) + 6 + (j.opts.stage >= 3 ? 1 : 0); // 변환·XREF·전개·1단계·모델·거더보(또는 건너뜀)·DXF·MGT
     j.step = '시작';
     fs.mkdirSync(j.outdir, { recursive: true });
     saveJobs();
@@ -284,7 +324,7 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     return jobs.filter((j) => j.state === 'failed' && j.failKind === 'error' && !(j.errorReport && j.errorReport.sent));
   }
 
-  return { enqueue, cancel, remove, setFeedback, setErrorReport, pendingErrorReports, state, versions, ensureInstalled, ensureConfig, isIdle: () => !current, job: (id) => jobs.find((j) => j.id === id) || null, paths: { APP, RT, CFG, PY, RESULTS }, EXT };
+  return { enqueue, cancel, remove, setFeedback, setErrorReport, pendingErrorReports, state, versions, ensureInstalled, ensureConfig, getSettings, setSettings, isIdle: () => !current, job: (id) => jobs.find((j) => j.id === id) || null, paths: { APP, RT, CFG, PY, RESULTS }, EXT };
 }
 
 module.exports = { createEngine, cmpVer, readText, swapDir };

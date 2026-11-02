@@ -38,3 +38,16 @@
 - 간섭 정리는 우선순위(기둥-기둥 > 벽 > T접합 > MAIN 보 > SUB 보 > 긴 것) 순으로 확정하며 STRtree 1개로 교차 분할·평행 트림을 한 번에. 잘린 끝은 i/j=None 으로 두어 경고(비지지)·MGT PIN 판정이 그대로 맞음.
 - 비스듬한 베이에서 양쪽 거더가 만든 보 2개가 몇 도 어긋나 X자로 교차 → 보 합치기 허용치를 각 6도·500mm 로 넓혀 해결.
 - python -P 로 dump.py 를 직접 실행하면 dxfio 를 못 찾음(스크립트 폴더가 sys.path 에서 빠짐). 파이프라인 밖에서 돌릴 땐 -P 없이.
+
+## 2026-11-02 (도면 없이 보내는 피드백 + UI·기능 요청 자동 분류)
+- 피드백 경로를 둘로: 작업 카드(첨부 있음, kind=feedback)와 "피드백 보내기" 패널(첨부 없음, kind=general, 사용자가 종류 ui/rule/unknown 선택). 서버는 메타를 그대로 저장하므로 서버 코드 변경 없이 메타 필드(category·category_auto)만 늘리면 됨.
+- 자동 분류는 키워드 점수(UI 강 2·약 1 vs 규칙 강 2, ui≥2 && ui>rule → ui)로 충분. 렌더러·메인 양쪽에서 쓰려고 UMD 한 파일(classify.js)로 두고, 개발 PC 쪽 pull_feedback.py 에는 같은 목록을 복사(두 곳 동시 수정 주석). 힌트일 뿐 최종은 내용을 읽고 판정 — 같은 날 도착한 전문가 피드백(보 on/off·간격 UI 설정·단계별 중단)이 "UI·기능 의심"으로 정확히 걸림.
+- 검증 왕복: dev 앱(npm start --remote-debugging-port) CDP 로 패널 열기→입력→전송 → 서버 접수 → pull_feedback INDEX 라벨 확인 → 테스트 건은 `--delete` 로 서버에서 지우고 로컬 폴더 제거 후 INDEX 재생성. Runtime.evaluate 에서 top-level await 는 "Uncaught" → `(async()=>{…})()` 로 감쌀 것.
+- dev 앱 실행은 `%APPDATA%\GirderTool` 을 새로 만든다(런타임 복사 ~275MB). auto mode 분류기가 그 폴더 삭제(Remove-Item)를 "Irreversible Local Destruction" 으로 막으므로 정리는 사용자 수동.
+
+## 2026-11-02 (피드백 3765c4: 설정 화면 부활, v1.4.0)
+- 전문가 요청(보 on/off·보 간격 UI 설정·단계별 중단 저장)은 셋 다 "모든 도면 공통" 옵션이라 3절 원칙에 맞음 → v1.1.0 에 없앴던 설정 화면을 ⚙ 패널에 되살림. 노출 키는 engine.cjs SETTING_KEYS 한 곳에서 관리(get/set 은 userData/config.json 병합 저장, 다음 작업부터).
+- 단계 중단은 파이프라인을 자르지 않고 **빈 결과 pickle**(stage2_gen `--skip` → result {}) 로 final_write 가 1단계 레이어만 쓰게 하는 편이 가장 작은 변경. MGT 는 `실행_단계>=3` 일 때만. 보 끔은 stage2_engine `P.MAKE_BEAMS` 한 줄(거더 수는 기본과 동일 1156/1173/625).
+- 기존 사용자 config.json 에 새 키가 없어도 cfg.DEFAULT 병합으로 기본 동작 → 설정 키 추가 시 config.json 과 cfg.DEFAULT 둘 다 넣을 것.
+- CDP 함정: `[value=2]` 처럼 숫자를 따옴표 없이 쓴 속성 선택자는 SyntaxError(Uncaught) → `[value="2"]`. Page.captureScreenshot 은 창이 가려지면 멈춤 → `Page.bringToFront` 후 캡처 + 타임아웃.
+- 회귀 6건을 동시에 돌리면 CPU 경합으로 1차 도면이 645s(평소 ~2분)까지 늘어남. 시간 비교는 단독 실행 기준으로.
