@@ -69,6 +69,13 @@
         <p class="hint">베이 폭 D 가 기준 거더 길이보다 길면 거더와 평행한 보를 D/2 에 1개, 2개 기준 이상이면 D/3 마다 2개, 3개 기준 이상이면 3개 둡니다.</p>
       </div>
     </div>
+    <div class="setgrp" id="setMgtGrp">
+      <h4>MIDAS GEN MGT (3단계)</h4>
+      <div class="nums">
+        <label><span>층고(층 높이)</span><input type="number" data-key="MGT_층고" min="100" step="100" inputmode="numeric" /><em>mm</em><i class="dflt"></i></label>
+        <p class="hint">모든 층에 같은 층고를 적용합니다. 도면 N 층의 기둥·벽은 N 층 바닥부터 층고만큼, 그 위 거더·보는 층고 높이에 놓입니다.</p>
+      </div>
+    </div>
     <div class="row gap">
       <button id="setSave" class="btn small">저장</button>
       <button id="setReset" class="btn ghost small">기본값으로</button>

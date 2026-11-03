@@ -1,6 +1,13 @@
 {
  "notes": [
   {
+   "version": "1.4.1",
+   "date": "2026-11-03",
+   "items": [
+    "설정 화면에 MIDAS GEN 층고(층 높이, 기본 5000mm) 추가 — 3단계까지 실행할 때 표시, 모든 층에 같은 층고 적용(피드백 04c6d1)"
+   ]
+  },
+  {
    "version": "1.4.0",
    "date": "2026-11-02",
    "items": [
@@ -107,12 +114,12 @@
    ]
   }
  ],
- "app_version": "1.4.0",
- "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.4.0/app.zip",
+ "app_version": "1.4.1",
+ "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.4.1/app.zip",
  "runtime_version": "1",
  "runtime_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/runtime-v1/runtime.zip",
- "shell_version": "1.4.0",
- "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.4.0/GirderTool-Setup-1.4.0.exe",
- "shell_sha256": "99599ffb948b36ee23b0b04c9cc307c059f8a15a81debefaca9016544a42838e",
- "shell_size": 145801995
+ "shell_version": "1.4.1",
+ "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.4.1/GirderTool-Setup-1.4.1.exe",
+ "shell_sha256": "33192425fddde03fa6be9733f108a397e862fb31a3262db4e14b23c6c1923ac1",
+ "shell_size": 145802252
 }

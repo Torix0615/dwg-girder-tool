@@ -49,21 +49,24 @@ function fillSettings({ values, defaults }) {
   const stage = String(values['실행_단계'] || 3);
   for (const r of document.querySelectorAll('input[name=stage]')) r.checked = r.value === stage;
   $('#optBeams').checked = Boolean(values['보_생성']);
-  for (const inp of document.querySelectorAll('#beamNums input[data-key]')) {
+  for (const inp of numInputs()) {
     inp.value = values[inp.dataset.key] ?? '';
     inp.classList.remove('changed');
     inp.parentElement.querySelector('.dflt').textContent = `기본 ${settingDefaults[inp.dataset.key] ?? '-'}`;
   }
   settingsVisibility();
 }
+const numInputs = () => [...document.querySelectorAll('#info .nums input[data-key]')];
+const isShown = (el) => !el.closest('.hidden');
 function settingsVisibility() {
   const stage = Number(document.querySelector('input[name=stage]:checked')?.value || 3);
   $('#setBeamGrp').classList.toggle('hidden', stage < 2); // 1단계까지만이면 보 설정은 의미 없음
   $('#beamNums').classList.toggle('hidden', !$('#optBeams').checked); // 보를 끄면 간격 옵션 숨김
+  $('#setMgtGrp').classList.toggle('hidden', stage < 3); // MGT 를 만들지 않으면 층고 설정 숨김
 }
 function readSettings() {
   const vals = { 실행_단계: Number(document.querySelector('input[name=stage]:checked')?.value || 3), 보_생성: $('#optBeams').checked };
-  for (const inp of document.querySelectorAll('#beamNums input[data-key]')) {
+  for (const inp of numInputs()) {
     const n = Number(inp.value);
     if (Number.isFinite(n) && n >= 100) vals[inp.dataset.key] = Math.round(n);
   }
@@ -71,14 +74,14 @@ function readSettings() {
 }
 $('#setStage').addEventListener('change', settingsVisibility);
 $('#optBeams').addEventListener('change', settingsVisibility);
-for (const inp of document.querySelectorAll('#beamNums input[data-key]')) {
+for (const inp of numInputs()) {
   inp.addEventListener('input', () => {
     inp.value = inp.value.replace(/[^\d]/g, ''); // 숫자만
     inp.classList.toggle('changed', Number(inp.value) !== Number(settingDefaults[inp.dataset.key]));
   });
 }
 $('#setSave').addEventListener('click', async () => {
-  const bad = [...document.querySelectorAll('#beamNums input[data-key]')].filter((i) => !$('#beamNums').classList.contains('hidden') && !(Number(i.value) >= 100));
+  const bad = numInputs().filter((i) => isShown(i) && !(Number(i.value) >= 100)); // 보이는 숫자칸만 검사
   const m = $('#setMsg');
   if (bad.length) {
     m.textContent = '숫자(100 이상, mm)를 입력해 주세요';

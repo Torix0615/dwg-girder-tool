@@ -51,3 +51,8 @@
 - 기존 사용자 config.json 에 새 키가 없어도 cfg.DEFAULT 병합으로 기본 동작 → 설정 키 추가 시 config.json 과 cfg.DEFAULT 둘 다 넣을 것.
 - CDP 함정: `[value=2]` 처럼 숫자를 따옴표 없이 쓴 속성 선택자는 SyntaxError(Uncaught) → `[value="2"]`. Page.captureScreenshot 은 창이 가려지면 멈춤 → `Page.bringToFront` 후 캡처 + 타임아웃.
 - 회귀 6건을 동시에 돌리면 CPU 경합으로 1차 도면이 645s(평소 ~2분)까지 늘어남. 시간 비교는 단독 실행 기준으로.
+
+## 2026-11-03 (피드백 04c6d1: MGT 층고 설정, v1.4.1)
+- 전문가가 v1.4.0 패널에서 종류 "프로그램 화면·기능"을 직접 골라 보낸 첫 건 — 자동 분류와 일치. 이미 config 에 있던 `MGT_층고` 를 SETTING_KEYS 와 화면 한 줄만으로 노출(엔진 변경 0) → 설정 추가 비용은 "키 1 + 입력 1줄" 수준으로 고정됨.
+- 숫자 입력 공통화: 선택자를 `#info .nums input[data-key]` 로 두고 검증은 `closest('.hidden')` 로 보이는 칸만. 그룹 숨김 조건(보=단계≥2, MGT=단계 3)은 settingsVisibility 한 곳.
+- 회귀는 피드백 원본(1BL.dwg)을 층고 4000 설정으로 돌려 MGT `*STORY` 레벨(0, 4000)로 확인 — 설정 옵션 회귀는 "값을 바꿔 결과에 찍히는지"가 기준.

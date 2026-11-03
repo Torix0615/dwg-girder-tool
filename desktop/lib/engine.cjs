@@ -128,8 +128,8 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
   }
 
   /** 앱 설정 화면에 노출하는 설정 키(모든 도면 공통인 것만, FEEDBACK_LOOP 3절). 값은 userData/config.json 에 저장, 다음 작업부터 적용 */
-  const SETTING_KEYS = ['실행_단계', '보_생성', '보_기준_거더길이', '보_베이폭_최소', '보_베이폭_2개', '보_베이폭_3개'];
-  const SETTING_FALLBACK = { 실행_단계: 3, 보_생성: true, 보_기준_거더길이: 4000, 보_베이폭_최소: 3000, 보_베이폭_2개: 8700, 보_베이폭_3개: 14000 };
+  const SETTING_KEYS = ['실행_단계', '보_생성', '보_기준_거더길이', '보_베이폭_최소', '보_베이폭_2개', '보_베이폭_3개', 'MGT_층고'];
+  const SETTING_FALLBACK = { 실행_단계: 3, 보_생성: true, 보_기준_거더길이: 4000, 보_베이폭_최소: 3000, 보_베이폭_2개: 8700, 보_베이폭_3개: 14000, MGT_층고: 5000 };
   function readJson(p) {
     try {
       return JSON.parse(fs.readFileSync(p, 'utf8').replace(/^﻿/, ''));
