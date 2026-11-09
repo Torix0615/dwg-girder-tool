@@ -23,7 +23,7 @@ python dist_build/pull_feedback.py
 
 ## 3. 설정 옵션 추가 원칙
 - 앱 설정 화면에는 **모든 도면에 공통으로 의미 있는 옵션**만 추가한다(예: 거더 분할 기준 길이). 도면마다 바꿔야 하는 값은 옵션이 아니라 자동 판별 로직으로 만든다.
-- 현재 노출 옵션(v1.4.0, 피드백 3765c4): `실행_단계`(1/2/3), `보_생성`, `보_기준_거더길이`, `보_베이폭_최소`, `보_베이폭_2개`, `보_베이폭_3개`. 노출 키 목록은 `desktop/lib/engine.cjs` SETTING_KEYS, 화면은 `renderer/index.html` #info. 새 옵션 = config.json 키 + cfg.DEFAULT + SETTING_KEYS + 화면 입력 1줄.
+- 현재 노출 옵션(v1.4.0, 피드백 3765c4): `실행_단계`(1/2/3), `보_생성`, `보_기준_거더길이`, `보_베이폭_최소`, `보_베이폭_2개`, `보_베이폭_3개`, `MGT_층고`(v1.4.1), 4단계 `검토_*` 23개(v1.5.0, 피드백 1d7f01: fck·fy·피복·철근·스터럽·하중조합·단위·추천 증분/상한). 노출 키와 검증 규칙(type/min/max/정규식)은 `desktop/lib/engine.cjs` SETTING_SPEC 한 곳, 화면은 `renderer/index.html` #info(.nums 숫자 / .texts 텍스트·select). 새 옵션 = config.json 키 + cfg.DEFAULT + SETTING_SPEC + 화면 입력 1줄.
 - 한 도면에서만 필요한 값은 옵션으로 만들지 않는다.
 
 ## 4. 회귀 자료
@@ -47,3 +47,10 @@ python dist_build/pull_feedback.py
 5. 배포: 버전 = `latest.json` app_version 의 patch +1(규칙 변경은 minor +1). `python dist_build/release.py <버전> "변경 내용(피드백 id)" [--shell]` → Release·latest.json·CHANGELOG·git push 까지 자동.
 6. 서버의 피드백은 삭제하지 않는다(가져가면 '가져감' 표시만). 보류 건은 배포에서 제외하고 결과에 전문가에게 물을 질문을 적는다.
 7. 보고: 결과표(id·종류·판정·수정 내용·배포 버전) → 꼭 알아야 할 내용 → 수동 지시(있을 때). 배운 점은 `docs/LEARNINGS.md` 에 append.
+
+## 7. 4단계 구조 검토(v1.5.0, 피드백 1d7f01 + 전문가 답변 11-09)
+- 흐름: 3단계 MGT 생성에서 작업이 끝남(그대로). 완료 카드의 **4단계 구조 검토** 에서 전문가가 MIDAS 해석 결과표(Beam Force 텍스트/CSV)를 첨부 → `stage4_check.py` 가 요소 대응표(`<이름>_MIDAS_elements.json`, stage3 가 함께 저장)로 부재를 식별해 KDS 14 20 검토 → `check.json` + 엑셀. NG 중 치수 변경이 있으면 **승인 → 수정 MGT**(`stage4_apply.py`: *SECTION 치수만, 철근은 쓰지 않음).
+- 결과표 파서는 실제 MIDAS 샘플 없이 표준 열(Elem/Load/Part/Axial/Shear/Torsion/Moment, 한글 머리글 포함, 탭·CSV·공백, 단위 머리글)을 기준으로 만들었다. 파싱 실패는 **자동 오류 보고(meta.stage=4, 결과표 첨부)** 로 들어오므로 `feedback/<id>/files/` 의 결과표로 `python stage4_check.py <elements.json> <결과표> <폴더>` 재현 → 파서 수정 → `stage4_selftest.py` 통과 → app.zip 배포.
+- 회귀: `python stage4_selftest.py <elements.json> <mgt> <폴더> [--heavy]` — 가상 결과표 4형식(탭 kN·mm / CSV kN·m / 공백 / 조합 이름)이 같은 OK·NG 수를 내고 승인 MGT 가 만들어지면 PASS. elements.json·mgt 는 `run_pipeline.py data/a31/bound.dxf --out <폴더>` 결과를 쓴다.
+- 설정 오류(철근 표기 등)는 입력 문제로 카드에 안내만, 그 외 실패는 오류 보고. 검토값은 참고용이며 엑셀 요약 시트에 그 문구와 적용 설정을 함께 기록한다.
+

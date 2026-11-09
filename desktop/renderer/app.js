@@ -52,45 +52,80 @@ function fillSettings({ values, defaults }) {
   for (const inp of numInputs()) {
     inp.value = values[inp.dataset.key] ?? '';
     inp.classList.remove('changed');
-    inp.parentElement.querySelector('.dflt').textContent = `기본 ${settingDefaults[inp.dataset.key] ?? '-'}`;
+    inp.closest('label').querySelector('.dflt').textContent = `기본 ${settingDefaults[inp.dataset.key] ?? '-'}`;
+  }
+  for (const inp of textInputs()) {
+    inp.value = values[inp.dataset.key] ?? '';
+    inp.classList.remove('changed', 'bad');
+    const d = inp.closest('label').querySelector('.dflt');
+    const keys = [...inp.closest('label').querySelectorAll('[data-key]')].map((x) => x.dataset.key); // 상부/하부 같은 쌍은 둘 다 표시
+    if (d) d.textContent = inp.tagName === 'SELECT' ? '' : `기본 ${keys.map((k) => settingDefaults[k] ?? '-').join(' / ')}`;
   }
   settingsVisibility();
 }
 const numInputs = () => [...document.querySelectorAll('#info .nums input[data-key]')];
+const textInputs = () => [...document.querySelectorAll('#info .texts input[data-key], #info .texts select[data-key]')];
 const isShown = (el) => !el.closest('.hidden');
+const TEXT_RE = { bars: /^\d{1,2}-D\d{2}$/, stir: /^D\d{2}@\d{2,3}$/, list: /^D\d{2}(\s*,\s*D\d{2})*$/, combo: /^[\d.\s+\-*DLdl;,]+$/ };
+const TEXT_HINT = { bars: '개수-직경 (예 4-D22)', stir: '직경@간격 (예 D10@200)', list: 'D13,D16,… 쉼표로', combo: '예 1.4D; 1.2D+1.6L' };
+function numOk(i) {
+  const n = Number(i.value);
+  return i.value !== '' && Number.isFinite(n) && n >= Number(i.min || 0) && (i.max === '' || n <= Number(i.max));
+}
+function textOk(i) {
+  if (i.tagName === 'SELECT') return true;
+  const re = TEXT_RE[i.dataset.re];
+  const v = i.value.trim();
+  return v !== '' && (!re || re.test(v));
+}
 function settingsVisibility() {
   const stage = Number(document.querySelector('input[name=stage]:checked')?.value || 3);
   $('#setBeamGrp').classList.toggle('hidden', stage < 2); // 1단계까지만이면 보 설정은 의미 없음
   $('#beamNums').classList.toggle('hidden', !$('#optBeams').checked); // 보를 끄면 간격 옵션 숨김
   $('#setMgtGrp').classList.toggle('hidden', stage < 3); // MGT 를 만들지 않으면 층고 설정 숨김
+  $('#setChkGrp').classList.toggle('hidden', stage < 3); // 4단계 검토는 MGT(3단계) 결과가 있어야 함
 }
 function readSettings() {
   const vals = { 실행_단계: Number(document.querySelector('input[name=stage]:checked')?.value || 3), 보_생성: $('#optBeams').checked };
-  for (const inp of numInputs()) {
-    const n = Number(inp.value);
-    if (Number.isFinite(n) && n >= 100) vals[inp.dataset.key] = Math.round(n);
-  }
+  for (const inp of numInputs()) if (numOk(inp)) vals[inp.dataset.key] = Number(inp.value);
+  for (const inp of textInputs()) if (textOk(inp)) vals[inp.dataset.key] = inp.value.trim();
   return vals;
 }
 $('#setStage').addEventListener('change', settingsVisibility);
 $('#optBeams').addEventListener('change', settingsVisibility);
 for (const inp of numInputs()) {
   inp.addEventListener('input', () => {
-    inp.value = inp.value.replace(/[^\d]/g, ''); // 숫자만
+    inp.value = inp.dataset.dec ? inp.value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1') : inp.value.replace(/[^\d]/g, ''); // 숫자만(소수 허용 칸은 점 1개)
     inp.classList.toggle('changed', Number(inp.value) !== Number(settingDefaults[inp.dataset.key]));
   });
 }
+for (const inp of textInputs()) {
+  inp.addEventListener('input', () => {
+    inp.classList.toggle('changed', String(inp.value).trim() !== String(settingDefaults[inp.dataset.key] ?? ''));
+    inp.classList.toggle('bad', !textOk(inp));
+  });
+}
 $('#setSave').addEventListener('click', async () => {
-  const bad = numInputs().filter((i) => isShown(i) && !(Number(i.value) >= 100)); // 보이는 숫자칸만 검사
   const m = $('#setMsg');
-  if (bad.length) {
-    m.textContent = '숫자(100 이상, mm)를 입력해 주세요';
+  const badN = numInputs().filter((i) => isShown(i) && !numOk(i)); // 보이는 칸만 검사
+  if (badN.length) {
+    const i = badN[0];
+    m.textContent = `${i.closest('label').querySelector('span').textContent}: ${i.min}${i.max ? `~${i.max}` : ' 이상'} 숫자를 입력해 주세요`;
     m.className = 'msg err';
-    bad[0].focus();
+    i.focus();
     return;
   }
-  fillSettings(await api.setSettings(readSettings()));
-  m.textContent = '저장됨 — 다음 작업부터 적용';
+  const badT = textInputs().filter((i) => isShown(i) && !textOk(i));
+  if (badT.length) {
+    const i = badT[0];
+    m.textContent = `${i.closest('label').querySelector('span').textContent}: ${TEXT_HINT[i.dataset.re] || '값을 입력해 주세요'}`;
+    m.className = 'msg err';
+    i.focus();
+    return;
+  }
+  const r = await api.setSettings(readSettings());
+  fillSettings(r);
+  m.textContent = r.rejected && r.rejected.length ? `저장됨 — 일부 값은 범위 밖이라 유지됨 (${r.rejected.join(', ')})` : '저장됨 — 다음 작업(4단계는 다음 검토)부터 적용';
   m.className = 'msg ok';
 });
 $('#setReset').addEventListener('click', async () => {
@@ -290,6 +325,7 @@ function renderDetail(j) {
         : ''
     }
     ${j.state === 'done' ? `<div class="row gap"><button class="btn" data-act="download">⬇ 결과 DXF</button>${j.mgt ? `<button class="btn" data-act="download-mgt">⬇ MIDAS GEN (MGT)</button>` : ''}<span class="hint">${esc(j.result ? j.result.split(/[\\/]/).pop() : '')}</span></div>` : ''}
+    ${j.state === 'done' && j.mgt ? renderStage4(j) : ''}
     ${
       j.state === 'done' || j.state === 'failed'
         ? `<section class="fb">
@@ -312,6 +348,34 @@ function renderDetail(j) {
     }
   `;
   el.querySelector('[data-act=cancel]')?.addEventListener('click', () => api.cancel());
+  // 4단계 구조 검토: 결과표 첨부 → 검토 / 엑셀·수정 MGT 다운로드 / 승인
+  const s4msg = (t, cls = '') => {
+    const m = el.querySelector('.s4 .s4-msg');
+    if (m) {
+      m.textContent = t;
+      m.className = 's4-msg msg ' + cls;
+    }
+  };
+  el.querySelector('[data-act=s4-pick]')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    const r = await api.stage4Pick(j.id);
+    e.target.disabled = false;
+    if (r.message) s4msg(r.message, r.ok ? '' : 'err');
+  });
+  el.querySelector('[data-act=s4-apply]')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    const r = await api.stage4Apply(j.id);
+    e.target.disabled = false;
+    if (r.message) s4msg(r.message, r.ok ? 'ok' : 'err');
+  });
+  for (const [act, kind] of [['s4-xlsx', 'xlsx'], ['s4-mgt2', 'mgt2']]) {
+    el.querySelector(`[data-act=${act}]`)?.addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      const r = await api.download(j.id, kind);
+      e.target.disabled = false;
+      if (r.message) s4msg(r.message, r.ok ? 'ok' : 'err');
+    });
+  }
   el.querySelector('[data-act=download-mgt]')?.addEventListener('click', async (e) => {
     e.target.disabled = true;
     const r = await api.download(j.id, 'mgt');
@@ -356,6 +420,36 @@ function renderDetail(j) {
       m.className = 'msg ' + (r.ok ? 'ok' : 'err');
     }
   });
+}
+
+// ---- 4단계 구조 검토 카드(3단계 MGT 가 있는 완료 작업): MIDAS 해석 결과표 첨부 → 검토 → 엑셀, 승인 → 수정 MGT
+const KIND_KO = { col: '기둥', girder: '거더', beam: '보' };
+function renderStage4(j) {
+  const s = j.stage4;
+  const canRun = !s || s.state !== 'running';
+  const pickLabel = s && s.state === 'done' ? '📎 다른 결과표로 다시 검토' : '📎 MIDAS 해석 결과표(텍스트) 첨부 → 검토 실행';
+  let body = '';
+  if (!j.elements) {
+    body = `<p class="hint">이 작업은 요소 대응표가 없어(1.5.0 이전 생성) 검토할 수 없습니다. 도면을 다시 작업한 뒤 이용해 주세요.</p>`;
+  } else if (s && s.state === 'running') {
+    const pct = Math.min(95, Math.round(((s.stepIdx || 0) / (s.total || 4)) * 100));
+    body = `<div class="d-status running">${esc(s.step || '검토 중')} · ${fmtSec(Date.now() - s.started)}</div><div class="bar"><i style="width:${pct}%"></i></div><pre class="d-tail">${esc((s.tail || []).slice(-4).join('\n'))}</pre>`;
+  } else if (s && s.state === 'failed') {
+    body = `<div class="fail ${s.failKind === 'input' ? 'input' : 'error'}"><b>${s.failKind === 'input' ? '설정·입력 문제' : '검토 실패'}</b> ${esc(s.failReason || '')}
+      <div class="hint">${s.failKind === 'input' ? '설정(⚙)을 고친 뒤 다시 검토해 주세요.' : esc(s.errorReport ? s.errorReport.message : '결과표를 포함한 오류 보고를 자동으로 보냅니다. 형식을 맞춘 업데이트가 나오면 자동 설치됩니다.')}</div></div>`;
+  } else if (s && s.state === 'done' && s.summary) {
+    const m = s.summary;
+    const kinds = Object.entries(m.by_kind || {}).map(([k, v]) => `${KIND_KO[k] || k} OK ${v.ok}·NG ${v.ng}${v.dims ? `(치수 ${v.dims})` : ''}`).join(' / ');
+    body = `<div class="chips"><span class="chip2">검토 ${m.total}</span><span class="chip2 ok">OK ${m.ok}</span><span class="chip2 ${m.ng ? 'ng' : ''}">NG ${m.ng}</span>${m.none ? `<span class="chip2 warn">결과 없음 ${m.none}</span>` : ''}${m.dims_changed ? `<span class="chip2 warn">치수 변경 추천 ${m.dims_changed}</span>` : ''}</div>
+      <p class="hint">${esc(kinds)} · 결과표 ${esc(s.resultName || '')} · 하중 ${m.loads}종 ${m.rows}행${m.unknown ? ` · 대응표에 없는 요소 ${m.unknown}개 무시` : ''} · ${esc(fmtDate(new Date(s.ended).toISOString()))}</p>
+      <div class="row gap"><button class="btn" data-act="s4-xlsx">⬇ 검토 결과 엑셀</button>
+      ${m.ng && m.dims_changed ? (s.mgt2 ? `<button class="btn" data-act="s4-mgt2">⬇ 수정 MGT (승인됨)</button><button class="btn ghost small" data-act="s4-apply">다시 생성</button>` : `<button class="btn" data-act="s4-apply">✔ 승인 → 수정 MGT 생성</button>`) : ''}</div>
+      <p class="hint">${m.ng === 0 ? '모든 부재 OK — MGT 수정이 필요 없습니다.' : m.dims_changed ? '승인하면 치수가 바뀐 부재만 새 단면(C2·G2·B2…)으로 바꾼 MGT 를 만듭니다. 철근은 MGT 에 쓰지 않으며 엑셀의 추천 철근을 참고하십시오.' : 'NG 부재는 철근 보강만으로 해결됩니다(엑셀 추천 철근 참조) — 단면 치수 변경이 없어 MGT 수정은 필요 없습니다.'}${s.applied ? ` 수정 MGT: 요소 ${s.applied.changed}개 단면 교체, 새 단면 ${(s.applied.new_sections || []).map((x) => `${x.name} ${x.H}×${x.B}`).join(', ')}` : ''}</p>`;
+  } else {
+    body = `<p class="hint">3단계 MGT 를 MIDAS GEN 에서 열어 <b>하중·하중조합을 정의하고 해석</b>한 뒤, 결과 테이블(Beam Force) 을 텍스트(.txt/.csv)로 저장해 첨부하면 기둥(축력·PM 상관도·장주)·거더·보(휨·전단)를 KDS 14 20 으로 검토하고 NG 부재는 철근 → 폭 → 춤 순으로 추천합니다. 검토 기준값은 ⚙ 설정.</p>`;
+  }
+  return `<section class="s4"><h3>4단계 구조 검토 <span class="chip">MIDAS 해석 결과 → KDS 14 20</span></h3>${body}
+    ${j.elements && canRun ? `<div class="row gap"><button class="btn ${s && s.state === 'done' ? 'ghost small' : ''}" data-act="s4-pick">${pickLabel}</button><span class="s4-msg msg"></span></div>` : '<span class="s4-msg msg"></span>'}</section>`;
 }
 
 // ---- 업데이트 띠

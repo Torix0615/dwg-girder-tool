@@ -35,7 +35,12 @@ function buildZip({ root, engine, text, scope, category, job, log, out }) {
   head.push(`자동 분류: ${KIND_LABEL[auto.category]} (UI: ${auto.ui.join('·') || '-'} / 규칙: ${auto.rule.join('·') || '-'})`);
   if (job) head.push(`대상 도면: ${job.src}`, `결과: ${job.result ? path.basename(job.result) : '(실패)'} / ${job.message}`);
   else head.push('대상 도면: (없음 — 도면 작업 없이 보낸 피드백)');
-  const attach = job ? [job.src, job.result, job.mgt, job.report].filter((p) => p && fs.existsSync(p)) : [];
+  const s4 = job && job.stage4;
+  if (s4) head.push(`4단계 구조 검토: ${s4.state} / ${s4.message || ''} / 결과표 ${s4.resultName || '-'}`);
+  const s4dir = s4 && s4.resultTxt ? path.dirname(s4.resultTxt) : null;
+  const attach = job
+    ? [job.src, job.result, job.mgt, job.report, s4 && s4.resultTxt, s4 && s4.xlsx, s4 && s4.mgt2, s4dir && path.join(s4dir, 'check_log.txt'), s4dir && path.join(s4dir, 'check_error.txt')].filter((p) => p && fs.existsSync(p))
+    : [];
   const tf = path.join(tmp, 'feedback.txt');
   fs.writeFileSync(tf, head.join('\n') + '\n\n' + String(text || '').trim() + '\n', 'utf8');
   const extra = ['데스크탑 로그 최근 50줄:'];
@@ -133,14 +138,18 @@ async function send({ root, engine, bundledApp, appVersion, text, scope, categor
 }
 
 /** 프로그램 오류 자동 보고(피드백과 별개): 보고서·로그·원본 도면을 서버로. 서버가 없거나 실패하면 false(다음 실행 때 재시도) */
-async function sendError({ root, engine, bundledApp, appVersion, job, log }) {
+async function sendError({ root, engine, bundledApp, appVersion, job, log, which = 'job' }) {
   const srv = serverInfo(engine, bundledApp);
   if (!srv) return { ok: false, message: '서버 주소 없음' };
-  const text = `[자동 오류 보고]\n실패: ${job.message}\n원인: ${job.failReason || '-'}\n도면: ${path.basename(job.src)}`;
+  const s4 = job.stage4 || {};
+  const text =
+    which === 'stage4'
+      ? `[자동 오류 보고 — 4단계 구조 검토]\n실패: ${s4.message || '-'}\n원인: ${s4.failReason || '-'}\n결과표: ${s4.resultName || '-'} (첨부)\n도면: ${path.basename(job.src)}`
+      : `[자동 오류 보고]\n실패: ${job.message}\n원인: ${job.failReason || '-'}\n도면: ${path.basename(job.src)}`;
   const stamp = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().replace(/[-:T]/g, '').slice(0, 13).replace(/(\d{8})(\d{4})/, '$1_$2');
   const zip = buildZip({ root, engine, text, scope: 'error', job, log, out: path.join(root, 'tmp', `오류보고_${stamp}.zip`) });
   const size = fs.statSync(zip).size;
-  const meta = { kind: 'error', version: appVersion, app: engine.versions().app, scope: 'error', job: path.basename(job.src), pc: os.hostname(), text: text.slice(0, 2000) };
+  const meta = { kind: 'error', version: appVersion, app: engine.versions().app, scope: 'error', stage: which === 'stage4' ? 4 : 0, job: path.basename(job.src), pc: os.hostname(), text: text.slice(0, 2000) };
   try {
     const r = await upload({ srv, file: zip, meta, onProgress: () => {} });
     fs.rmSync(zip, { force: true });

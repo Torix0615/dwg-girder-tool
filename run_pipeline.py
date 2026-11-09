@@ -124,6 +124,9 @@ def main():
         step("3단계 MIDAS GEN MGT 작성", py + ["stage3_mgt.py", cand, model, res, mgt, "--report", os.path.join(work, "mgt_report.txt")] + cfg_args)
         if os.path.exists(mgt):
             shutil.copyfile(mgt, os.path.join(outdir, f"{base}_MIDAS.mgt"))
+        elem = os.path.join(work, "model_elements.json")  # 4단계(구조 검토)용 요소 대응표
+        if os.path.exists(elem):
+            shutil.copyfile(elem, os.path.join(outdir, f"{base}_MIDAS_elements.json"))
     else:
         log.append(f"3단계 MGT 건너뜀(설정: {STAGE}단계까지 실행)")
     if a.html:

@@ -129,3 +129,23 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 .iconbtn.pin svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; vertical-align: middle; }
 .iconbtn.pin.on { color: var(--accent); background: #3a3420; }
 .iconbtn.pin.on svg { fill: currentColor; }
+
+/* 4단계 구조 검토 카드·설정(텍스트 입력) */
+.s4 { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.s4 h3 { margin: 0 0 6px; font-size: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.chip2 { display: inline-block; padding: 2px 10px; border-radius: 10px; background: var(--panel2); font-size: 12px; color: var(--text); }
+.chip2.ok { background: #1f3a2a; color: var(--ok); }
+.chip2.ng { background: #3a2222; color: var(--err); }
+.chip2.warn { background: #3a3522; color: var(--accent); }
+.texts { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.texts label { display: grid; grid-template-columns: 220px 180px 80px 1fr; align-items: center; gap: 6px; }
+.texts input[type=text], .texts select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; user-select: text; width: 100%; }
+.texts input[type=text]:focus, .texts select:focus { outline: 1px solid var(--accent); }
+.texts input.changed { border-color: var(--accent); }
+.texts input.bad { border-color: var(--err); }
+.texts .pair { display: flex; gap: 4px; }
+.texts input.long { grid-column: 2 / span 2; }
+.texts .pair input { width: 50%; }
+.texts em { font-style: normal; color: var(--muted); font-size: 12px; }
+.texts i.dflt { font-style: normal; color: var(--muted); font-size: 11px; }

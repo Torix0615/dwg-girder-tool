@@ -2,7 +2,8 @@
 python stage3_mgt.py out/s1_cand.pkl out/s2_model.pkl out/s2_result.pkl out/model.mgt [--config config.json] [--report f]
 규칙(명령문 3단계):
  1. MATERIAL: C27(1), C35(2)  — 기둥=C35, 거더·보·벽=C27 (가정)
- 2. SECTION : 10 C1(기둥, 도면 최빈 기둥 치수), 100 G1(거더), 500 B1(보)
+ 2. SECTION : 10 C1(기둥, 도면 최빈 기둥 치수), 100 G1(거더), 500 B1(보). SB 치수는 H(요소 z축 깊이=춤), B(폭) 순(1.5.0 에서 순서 교정)
+    + 요소 대응표 <out>_elements.json(번호·종류·층·길이·단면) — 4단계 구조 검토(stage4_check.py) 입력
  3. THICKNESS: 200(내벽), 500(최외각 벽)
  4. STORY   : 도면(층)마다 5m, 건축물 하부층부터 위로. 도면 N 층의 기둥·벽은 N 층 바닥(z_N)~N+1 층 바닥(z_N+5m), 그 위 도면(N+1)의 거더·보는 z_N+5m 에.
  5. 거더→G1(BEAM), 기둥→C1(BEAM, 수직), 벽→WALL(두께 200, 최외각 500)
@@ -374,9 +375,12 @@ L.append(f"    2, CONC , C35, 0, 0, , C, NO, 0.05, 1, KS01(RC), , C35, NO, {E_C3
 L.append("")
 L.append("*SECTION    ; Section")
 L.append("; iSEC, TYPE, SNAME, [OFFSET], bSD, bWE, SHAPE, [DATA1], [DATA2]                    ; 1st line - DB/USER")
-L.append(f"   10, DBUSER    , C1, CC, 0, 0, 0, 0, 0, 0, YES, NO, SB , 2, {C1[0]}, {C1[1]}, 0, 0, 0, 0, 0, 0, 0, 0")
-L.append(f"  100, DBUSER    , G1, CT, 0, 0, 0, 0, 0, 0, YES, NO, SB , 2, {int(CFG.get('거더폭_Y', 500))}, {int(CFG.get('MGT_거더춤', 700))}, 0, 0, 0, 0, 0, 0, 0, 0")
-L.append(f"  500, DBUSER    , B1, CT, 0, 0, 0, 0, 0, 0, YES, NO, SB , 2, {int(CFG.get('보폭', 400))}, {int(CFG.get('MGT_보춤', 600))}, 0, 0, 0, 0, 0, 0, 0, 0")
+# SB(Solid Rectangle) 치수 순서 = H(요소 z축 방향 깊이), B(폭). 수평 부재는 H=춤·B=폭, 기둥은 H=도면 X 치수·B=Y 치수(β=0 이면 요소 z축 ∥ 전체 X)
+SEC = {10: ("C1", int(C1[0]), int(C1[1])),
+       100: ("G1", int(CFG.get("MGT_거더춤", 700)), int(CFG.get("거더폭_Y", 500))),
+       500: ("B1", int(CFG.get("MGT_보춤", 600)), int(CFG.get("보폭", 400)))}
+for sid, (sname, H, B) in SEC.items():
+    L.append(f"  {sid:>3}, DBUSER    , {sname}, {'CC' if sid == 10 else 'CT'}, 0, 0, 0, 0, 0, 0, YES, NO, SB , 2, {H}, {B}, 0, 0, 0, 0, 0, 0, 0, 0")
 L.append("")
 L.append("*THICKNESS    ; Thickness")
 L.append("; iTHK, TYPE, NAME, bSAME, THIK-IN, THIK-OUT, bOFFSET, OFFTYPE, VALUE ; TYPE=VALUE")
@@ -412,5 +416,25 @@ L.append("")
 L.append("*ENDDATA")
 open(out_p, "w", encoding="utf-8", newline="\r\n").write("\n".join(L) + "\n")
 log(f"saved {out_p} ({len(L)} 줄, {time.time()-t0:.0f}s)")
+
+# ---------------- 요소 대응표(4단계 구조 검토용) ----------------
+# MGT 요소 번호 ↔ 종류(col/girder/beam/wall)·층·절점·길이·단면. 4단계(stage4_check)가 MIDAS 해석 결과표의 요소 번호를 이 표로 식별한다.
+import json
+def _len(e):
+    a = nodes.pts[e["n"][0] - 1]; b = nodes.pts[e["n"][1] - 1]
+    return round(math.dist(a, b), 1)
+sec_json = {str(k): {"name": v[0], "H": v[1], "B": v[2]} for k, v in SEC.items()}
+elem_json = {
+    "version": 1, "unit": {"force": "kN", "length": "mm"}, "story_h": STORY_H,
+    "materials": {"1": {"name": "C27", "fck": 27}, "2": {"name": "C35", "fck": 35}},
+    "sections": sec_json,
+    "stories": [{"name": short[f], "z": story_levels[f]} for f in order] + [{"name": "ROOF", "z": TOP_Z}],
+    "elements": [{"id": e["id"], "kind": e["kind"], "floor": short.get(e.get("floor"), str(e.get("floor"))), "mat": e["mat"], "sec": e["pro"],
+                  "nodes": list(e["n"]), "len": _len(e) if e["type"] == "BEAM" else None,
+                  "z": round(float(nodes.pts[e["n"][0] - 1][2]), 1)} for e in elements],
+}
+elem_p = out_p[:-4] + "_elements.json" if out_p.lower().endswith(".mgt") else out_p + "_elements.json"
+json.dump(elem_json, open(elem_p, "w", encoding="utf-8"), ensure_ascii=False, indent=0)
+log(f"saved {elem_p} (요소 대응표 {len(elements)}개)")
 if report:
     open(report, "w", encoding="utf-8").write("\n".join(lines_log))

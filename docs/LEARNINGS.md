@@ -56,3 +56,14 @@
 - 전문가가 v1.4.0 패널에서 종류 "프로그램 화면·기능"을 직접 골라 보낸 첫 건 — 자동 분류와 일치. 이미 config 에 있던 `MGT_층고` 를 SETTING_KEYS 와 화면 한 줄만으로 노출(엔진 변경 0) → 설정 추가 비용은 "키 1 + 입력 1줄" 수준으로 고정됨.
 - 숫자 입력 공통화: 선택자를 `#info .nums input[data-key]` 로 두고 검증은 `closest('.hidden')` 로 보이는 칸만. 그룹 숨김 조건(보=단계≥2, MGT=단계 3)은 settingsVisibility 한 곳.
 - 회귀는 피드백 원본(1BL.dwg)을 층고 4000 설정으로 돌려 MGT `*STORY` 레벨(0, 4000)로 확인 — 설정 옵션 회귀는 "값을 바꿔 결과에 찍히는지"가 기준.
+
+## 2026-11-10 (피드백 1d7f01: 4단계 구조 검토, v1.5.0)
+- 신규 모듈 요청은 "보류 + 질문지(확정 답이 필요한 5개만)" → 전문가 답(텍스트 결과 첨부·KDS 14 20·PM 1축×2+장주·수정 MGT 는 치수만) → 설계안 → 구현 순이 맞았다. 질문은 화면·양식·상한값은 빼고 "답이 없으면 결과가 틀리거나 검증 불가한 것"만.
+- 부재력은 앱 안에서 해석하지 않고 MIDAS 해석 결과표(Beam Force 텍스트)를 받는다. 요소 번호 대응이 핵심이라 stage3 가 `<이름>_MIDAS_elements.json`(번호·종류·층·길이·단면)을 MGT 와 같이 저장하고 stage4 가 그걸로 식별한다.
+- 결과표 파서는 실제 샘플이 없어 표준 열(영·한 머리글, 탭/CSV/공백, 단위 괄호)로 만들고, 실패하면 결과표를 첨부한 자동 오류 보고(meta.stage=4)가 오도록 해 첫 실제 파일로 맞춘다. 파싱 실패는 '입력'이 아니라 '오류'로 분류해야 파일이 들어온다.
+- 배포 런타임엔 openpyxl 이 없다 → zipfile 로 최소 xlsx(inlineStr·styles 6종)를 직접 쓰면 런타임 재배포 없이 엑셀 출력 가능(stage4_xlsx.py). Excel 호환은 XML well-formed 검사 + 열 너비·틀 고정·자동필터까지.
+- MIDAS SB(Solid Rectangle) 치수 순서는 H(요소 z축 깊이=춤), B(폭). 종전 stage3 는 폭·춤 순으로 적어 거더가 700 폭×500 춤으로 들어갔음 → 교정. 기둥은 β=0 이면 요소 z축이 전체 X 라 H=X 치수 그대로.
+- 기둥 PM 은 변형률 적합으로 φ곡선 폴리곤(상단 0.80φPo 수평 컷 포함)을 만들고 원점 반직선과의 교점 비율(반경비)로 D/C. 최소 철근비 1% 미달도 NG 로 잡으면 큰 단면(700×1600)에 기본 12-D22 는 전부 NG → 전문가가 설정에서 철근을 맞춰야 한다는 안내 필요.
+- 설정 키가 23개 늘어나자 "숫자 ≥100" 단일 검증이 깨짐 → engine.cjs SETTING_SPEC(type/min/max/정규식)으로 한 곳 검증, 렌더러는 .nums 숫자 / .texts 텍스트·select 두 묶음. 무효 값은 저장하지 않고 rejected 로 돌려준다.
+- CDP: websocket-client 는 `suppress_origin=True` 없으면 Electron 이 403. 창이 가려지면 Page.captureScreenshot 이 멈춤 → `--disable-features=CalculateNativeWinOcclusion` 로 띄우면 해결. 한글 출력은 PYTHONUTF8=1. taskkill 은 auto mode 가 막으므로 종료는 CDP `Browser.close`.
+- 테스트로 보낸 자동 오류 보고는 `pull_feedback.py --delete <id>` + 로컬 폴더 삭제 + 재실행(INDEX 재생성)으로 정리.

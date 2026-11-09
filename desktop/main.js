@@ -166,10 +166,15 @@ async function startJob() {
 /** 다운로드: 최종 DXF 만 사용자가 고른 위치에 저장 */
 async function download(jobId, kind = 'dxf') {
   const j = engine.job(jobId);
-  const src = kind === 'mgt' ? j && j.mgt : j && j.result;
+  const s4 = (j && j.stage4) || {};
+  const pick = { dxf: j && j.result, mgt: j && j.mgt, xlsx: s4.xlsx, mgt2: s4.mgt2 };
+  const src = pick[kind];
   if (!j || !src || !fs.existsSync(src)) return { ok: false, message: '결과 파일이 없습니다' };
-  const filt = kind === 'mgt' ? [{ name: 'MIDAS Gen MGT', extensions: ['mgt'] }] : [{ name: 'DXF', extensions: ['dxf'] }];
-  const r = await dialog.showSaveDialog(mainWindow, { title: kind === 'mgt' ? 'MIDAS GEN MGT 저장' : '결과 DXF 저장', defaultPath: path.join(app.getPath('downloads'), path.basename(src)), filters: filt });
+  const filt = { dxf: [{ name: 'DXF', extensions: ['dxf'] }], mgt: [{ name: 'MIDAS Gen MGT', extensions: ['mgt'] }], mgt2: [{ name: 'MIDAS Gen MGT', extensions: ['mgt'] }], xlsx: [{ name: 'Excel', extensions: ['xlsx'] }] }[kind];
+  const title = { dxf: '결과 DXF 저장', mgt: 'MIDAS GEN MGT 저장', mgt2: '수정 MGT(4단계 승인) 저장', xlsx: '4단계 검토 결과 엑셀 저장' }[kind];
+  const base = path.basename(j.src, path.extname(j.src));
+  const name = kind === 'xlsx' ? `${base}_구조검토.xlsx` : path.basename(src);
+  const r = await dialog.showSaveDialog(mainWindow, { title, defaultPath: path.join(app.getPath('downloads'), name), filters: filt });
   if (r.canceled || !r.filePath) return { ok: false, message: '' };
   fs.copyFileSync(src, r.filePath);
   log('다운로드', r.filePath);
@@ -177,16 +182,27 @@ async function download(jobId, kind = 'dxf') {
   return { ok: true, message: `저장됨: ${r.filePath}`, file: r.filePath };
 }
 
-/** 프로그램 오류(입력 문제가 아닌 실패) 자동 보고 — 피드백과 별개, 사용자 조작 없음 */
-async function reportError(j) {
+/** 프로그램 오류(입력 문제가 아닌 실패) 자동 보고 — 피드백과 별개, 사용자 조작 없음. which='stage4' 면 4단계 검토 실패(결과표 첨부) */
+async function reportError(j, which = 'job') {
   try {
-    engine.setErrorReport(j.id, { sent: false, at: new Date().toISOString(), message: '오류 보고 전송 중' });
-    const r = await require('./lib/feedback.cjs').sendError({ root: ROOT, engine, bundledApp: path.join(BUNDLED, 'app'), appVersion: app.getVersion(), job: j, log });
-    engine.setErrorReport(j.id, { sent: Boolean(r.ok), id: r.id, at: new Date().toISOString(), message: r.message });
+    engine.setErrorReport(j.id, { sent: false, at: new Date().toISOString(), message: '오류 보고 전송 중' }, which);
+    const r = await require('./lib/feedback.cjs').sendError({ root: ROOT, engine, bundledApp: path.join(BUNDLED, 'app'), appVersion: app.getVersion(), job: j, log, which });
+    engine.setErrorReport(j.id, { sent: Boolean(r.ok), id: r.id, at: new Date().toISOString(), message: r.message }, which);
   } catch (e) {
     log('오류 보고 실패', e);
-    engine.setErrorReport(j.id, { sent: false, at: new Date().toISOString(), message: `오류 보고 실패: ${e.message}` });
+    engine.setErrorReport(j.id, { sent: false, at: new Date().toISOString(), message: `오류 보고 실패: ${e.message}` }, which);
   }
+}
+
+/** 4단계: MIDAS 해석 결과표(텍스트) 선택 → 검토 실행 */
+async function pickStage4(jobId) {
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: 'MIDAS GEN 해석 결과표(Beam Force 텍스트) 선택',
+    filters: [{ name: '결과표 텍스트', extensions: ['txt', 'csv', 'tsv', 'dat', 'out', 'prn'] }, { name: '모든 파일', extensions: ['*'] }],
+    properties: ['openFile'],
+  });
+  if (r.canceled || !r.filePaths.length) return { ok: false, message: '' };
+  return engine.runStage4(jobId, r.filePaths[0]);
 }
 
 function registerIpc() {
@@ -196,6 +212,9 @@ function registerIpc() {
   ipcMain.handle('remove-job', (_e, id) => engine.remove(id));
   ipcMain.handle('engine-state', () => engine.state());
   ipcMain.handle('download', (_e, id, kind) => download(id, kind));
+  ipcMain.handle('stage4-pick', (_e, id) => pickStage4(id));
+  ipcMain.handle('stage4-run', (_e, id, p) => engine.runStage4(id, p));
+  ipcMain.handle('stage4-apply', (_e, id) => engine.applyStage4(id));
   ipcMain.handle('open-path', (_e, p) => shell.openPath(p));
   ipcMain.handle('show-in-folder', (_e, p) => shell.showItemInFolder(p));
   // 피드백: jobId 가 있으면 작업 카드(원본·결과 첨부), 없으면 도면 작업 없이 보내는 피드백(scope=general, 첨부 없음 → 보낸 내역을 settings 에 보관)
@@ -237,7 +256,7 @@ app.whenReady().then(() => {
     root: ROOT,
     bundled: BUNDLED,
     log,
-    onError: (j) => reportError(j),
+    onError: (j, which) => reportError(j, which),
     onState: (s) => {
       send('engine-state', s);
       if (!s.running && updater) {

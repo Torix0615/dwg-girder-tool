@@ -1,6 +1,16 @@
 {
  "notes": [
   {
+   "version": "1.5.0",
+   "date": "2026-11-10",
+   "items": [
+    "4단계 구조 검토 추가(피드백 1d7f01, 전문가 답변 11-09): 3단계 MGT 를 MIDAS 에서 하중·하중조합을 넣고 해석한 결과표(Beam Force 텍스트/CSV)를 완료 카드에 첨부하면 KDS 14 20 강도설계법으로 기둥(축력·PM 상관도 Mx·My·장주 효과)·거더·보(단부/중앙 휨·전단)를 검토하고, NG 부재는 철근 → 폭 → 춤 순으로 추천. 결과는 엑셀(검토결과·요약·하중), 승인 버튼을 누르면 치수가 바뀐 부재만 새 단면으로 바꾼 수정 MGT 생성(철근은 MGT 에 쓰지 않음). 3단계에서 작업이 끝나는 동작은 그대로",
+    "설정 화면(⚙)에 \"4단계 구조 검토\" 묶음 추가: 콘크리트 fck(기둥·보), 철근 fy(주근·전단), 피복, 기둥 주근·띠철근, 거더·보 상/하부근·스터럽(개수-직경, 직경@간격), 추천 철근 직경 후보, 하중조합(결과표에 D·L 케이스만 있을 때), 결과표 단위, 추천 폭·춤 증분과 단면 상한, 기둥 철근비 최대",
+    "3단계 MGT 단면(*SECTION SB) 치수 순서를 MIDAS 규격(H=춤, B=폭)으로 교정 — 종전에는 거더·보가 폭·춤이 바뀌어 들어갔음(예 G1 700 폭×500 춤). 요소 대응표 파일(<이름>_MIDAS_elements.json)을 MGT 와 함께 저장(4단계용)",
+    "4단계 검토 실패(결과표 형식 미인식 등)는 결과표를 첨부해 자동 오류 보고 — 실제 MIDAS 결과표 형식에 맞춘 업데이트로 반영"
+   ]
+  },
+  {
    "version": "1.4.1",
    "date": "2026-11-03",
    "items": [
@@ -114,12 +124,12 @@
    ]
   }
  ],
- "app_version": "1.4.1",
- "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.4.1/app.zip",
+ "app_version": "1.5.0",
+ "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.5.0/app.zip",
  "runtime_version": "1",
  "runtime_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/runtime-v1/runtime.zip",
- "shell_version": "1.4.1",
- "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.4.1/GirderTool-Setup-1.4.1.exe",
- "shell_sha256": "33192425fddde03fa6be9733f108a397e862fb31a3262db4e14b23c6c1923ac1",
- "shell_size": 145802252
+ "shell_version": "1.5.0",
+ "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.5.0/GirderTool-Setup-1.5.0.exe",
+ "shell_sha256": "0967df6c760144a3bd14a0e1400e21a4869423b53334718b34b54e40a0ee4379",
+ "shell_size": 145825908
 }
