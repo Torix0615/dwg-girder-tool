@@ -1,6 +1,15 @@
 {
  "notes": [
   {
+   "version": "1.5.1",
+   "date": "2026-11-11",
+   "items": [
+    "4단계 결과표 칸에 MIDAS 모델 파일(.mgt)을 첨부하면 오류 보고를 보내지 않고 '해석 결과표(Beam Force 텍스트/CSV)를 첨부' 안내만 표시(피드백 1d7f01 샘플)",
+    "4단계 승인(수정 MGT): 새 단면명을 G2(650x700)처럼 폭x춤 표기로 쓰고 기존 단면 번호와 겹치지 않게 부여",
+    "수정 MGT 작성이 원본 MGT 의 길이 단위(KN·M 등)와 설계 단면(*DGN-SECT)을 따르도록 보강 — 전문가 실제 MIDAS 모델(250930 흑석동 어린이집)로 검증"
+   ]
+  },
+  {
    "version": "1.5.0",
    "date": "2026-11-10",
    "items": [
@@ -124,12 +133,12 @@
    ]
   }
  ],
- "app_version": "1.5.0",
- "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.5.0/app.zip",
+ "app_version": "1.5.1",
+ "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.5.1/app.zip",
  "runtime_version": "1",
  "runtime_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/runtime-v1/runtime.zip",
- "shell_version": "1.5.0",
- "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.5.0/GirderTool-Setup-1.5.0.exe",
- "shell_sha256": "0967df6c760144a3bd14a0e1400e21a4869423b53334718b34b54e40a0ee4379",
- "shell_size": 145825908
+ "shell_version": "1.5.1",
+ "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.5.1/GirderTool-Setup-1.5.1.exe",
+ "shell_sha256": "92effe14d03a0c5ca83dbc65f428e745c495e189b466c7b1cbfbe4b7420f5148",
+ "shell_size": 145826730
 }

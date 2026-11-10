@@ -452,7 +452,7 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
         const last = lines.slice(-1)[0] || `종료 코드 ${code}`;
         s.failReason = /^SystemExit: /.test(last) ? last.slice(12) : last;
         // 설정 오류는 사용자가 고칠 것(입력), 그 외(결과표 형식 미인식 포함)는 프로그램 쪽에서 봐야 하므로 자동 오류 보고(첨부: 결과표)
-        s.failKind = /설정 오류/.test(s.failReason) ? 'input' : 'error';
+        s.failKind = /설정 오류|입력 오류/.test(s.failReason) ? 'input' : 'error'; // 입력 오류 = 사용자가 고칠 것(모델 MGT 를 결과표로 첨부 등), 자동 보고 안 함
         s.message = `검토 실패: ${s.failReason}`;
         try {
           fs.writeFileSync(path.join(dir, 'check_error.txt'), err);

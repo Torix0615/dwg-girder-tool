@@ -13,6 +13,24 @@ chk = json.load(open(chk_p, encoding="utf-8"))
 PREFIX = {"col": "C", "girder": "G", "beam": "B"}
 BASE_ID = {"col": 10, "girder": 100, "beam": 500}
 
+# *UNIT 길이 단위: 추천 치수(mm)를 원본 MGT 단위로 써야 함(전문가 실제 모델은 KN·M — 1d7f01 답변 5 샘플, 2026-11-10)
+LEN_UNIT = "MM"
+u_i = next((i for i, l in enumerate(src) if l.strip().upper().startswith("*UNIT")), None)
+if u_i is not None:
+    for l in src[u_i + 1:u_i + 6]:
+        s = l.strip()
+        if s and not s.startswith(";") and not s.startswith("*"):
+            parts = [p.strip().upper() for p in s.split(",")]
+            if len(parts) > 1:
+                LEN_UNIT = parts[1]
+            break
+MM_PER = {"MM": 1.0, "CM": 10.0, "M": 1000.0, "IN": 25.4, "FT": 304.8}.get(LEN_UNIT, 1.0)
+
+
+def dim_txt(mm):
+    v = mm / MM_PER
+    return str(int(round(v))) if abs(v - round(v)) < 1e-9 else f"{v:.6g}"
+
 # 바꿀 요소: 추천이 있고 치수가 바뀐 것만
 changes = {}
 for r in chk["results"]:
@@ -35,11 +53,11 @@ for i in range(sec_start + 1, sec_end):
         if m:
             sec_lines[int(m.group(1))] = i
 used_ids = set(sec_lines)
-used_names = set()
+used_names = set()   # 전체 이름(G1(400x600)) 과 번호 부분(G1) 둘 다 — 전문가 모델의 G2(500x600) 가 있으면 새 단면은 G2 를 건너뜀
 for i in sec_lines.values():
     parts = [p.strip() for p in src[i].split(",")]
     if len(parts) > 2:
-        used_names.add(parts[2])
+        used_names.add(parts[2]); used_names.add(parts[2].split("(")[0].strip())
 
 new_secs = {}  # (kind,H,B) -> (new id, name, line)
 counter = {k: 1 for k in PREFIX}
@@ -57,13 +75,14 @@ for eid, (kind, H, B, base_sec) in sorted(changes.items()):
     used_ids.add(nid)
     while True:
         counter[kind] += 1
-        name = f"{PREFIX[kind]}{counter[kind]}"
-        if name not in used_names:
-            used_names.add(name); break
-    # SB 치수: 'SB' 토큰 뒤 '2', H, B
+        base = f"{PREFIX[kind]}{counter[kind]}"
+        name = f"{base}({B}x{H})"  # 전문가 모델 표기(폭x춤, 예 G1(400x600))와 같게
+        if name not in used_names and base not in used_names:
+            used_names.add(name); used_names.add(base); break
+    # SB 치수: 'SB' 토큰 뒤 '2', H, B — 원본 MGT 길이 단위로
     try:
         si = next(j for j, p in enumerate(parts) if p.upper() == "SB")
-        parts[si + 2] = str(H); parts[si + 3] = str(B)
+        parts[si + 2] = dim_txt(H); parts[si + 3] = dim_txt(B)
     except (StopIteration, IndexError):
         sys.exit(f"단면 {base_sec} 줄에서 SB 치수를 찾지 못함: {src[base_i]}")
     parts[0] = f"{nid:>5}"; parts[2] = name
@@ -92,8 +111,18 @@ for i in range(el_start + 1, el_end):
         src[i] = "   " + ", ".join(parts)
         n_changed += 1
 
-out = src[:sec_end] + [v[2] for v in new_secs.values()] + src[sec_end:]
-head = [f";  4단계 구조 검토 승인 반영 {time.strftime('%Y/%m/%d %H:%M')} — 단면 치수 변경 {n_changed}개 요소, 새 단면 {len(new_secs)}개 (철근은 엑셀 참조)"]
+new_lines = [v[2] for v in new_secs.values()]
+out = src[:sec_end] + new_lines + src[sec_end:]
+# 전문가 모델에는 설계 단면 블록(*DGN-SECT, *SECTION 과 같은 줄)이 따로 있음 — 있으면 거기에도 추가해 설계 단면이 비지 않게
+dg_start = next((i for i, l in enumerate(out) if l.strip().upper().startswith("*DGN-SECT")), None)
+if dg_start is not None and new_lines:
+    dg_end = dg_start + 1
+    while dg_end < len(out) and not out[dg_end].strip().startswith("*"):
+        dg_end += 1
+    while dg_end > dg_start + 1 and not out[dg_end - 1].strip():
+        dg_end -= 1
+    out = out[:dg_end] + new_lines + out[dg_end:]
+head = [f";  4단계 구조 검토 승인 반영 {time.strftime('%Y/%m/%d %H:%M')} — 단면 치수 변경 {n_changed}개 요소, 새 단면 {len(new_secs)}개, 치수 단위 {LEN_UNIT} (철근은 엑셀 참조)"]
 if out and out[0].startswith(";"):
     out = out[:1] + head + out[1:]
 else:

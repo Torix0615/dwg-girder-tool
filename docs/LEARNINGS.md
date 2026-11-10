@@ -67,3 +67,10 @@
 - 설정 키가 23개 늘어나자 "숫자 ≥100" 단일 검증이 깨짐 → engine.cjs SETTING_SPEC(type/min/max/정규식)으로 한 곳 검증, 렌더러는 .nums 숫자 / .texts 텍스트·select 두 묶음. 무효 값은 저장하지 않고 rejected 로 돌려준다.
 - CDP: websocket-client 는 `suppress_origin=True` 없으면 Electron 이 403. 창이 가려지면 Page.captureScreenshot 이 멈춤 → `--disable-features=CalculateNativeWinOcclusion` 로 띄우면 해결. 한글 출력은 PYTHONUTF8=1. taskkill 은 auto mode 가 막으므로 종료는 CDP `Browser.close`.
 - 테스트로 보낸 자동 오류 보고는 `pull_feedback.py --delete <id>` + 로컬 폴더 삭제 + 재실행(INDEX 재생성)으로 정리.
+
+## 2026-11-10 (1d7f01 답변 5 샘플 — 첫 실제 MIDAS Gen 모델로 4단계 왕복 테스트)
+- 전문가의 실제 MGT 는 **KN·M** 단위였다. 우리 3단계는 KN·MM 이라 stage4_apply 가 mm 정수를 그대로 쓰면 M 파일에 600m 단면이 들어간다 → *UNIT 을 읽어 환산(MM/CM/M). 승인 MGT 는 항상 원본 MGT 의 단위를 따른다.
+- 실제 모델 단면명은 `G1(400x600)`(폭x춤) 표기, 번호 체계 10/100~130/200~220, 더미 재료·단면 9999(가상 보)가 있다. 새 단면명은 같은 표기 + 기존 번호 건너뛰기, 더미는 임포트에서 제외.
+- *DGN-SECT(설계 단면)가 *SECTION 과 같은 줄로 따로 있다. 새 단면을 *SECTION 에만 넣으면 설계 단면이 비므로 두 블록 모두에 추가.
+- 전문가가 "MGT 파일을 새로 첨부"를 모델 파일로 이해하고 모델 MGT 를 결과표 칸에 넣을 가능성이 크다 → 파서가 MGT 머리말(`midas Gen Text(MGT)`/`*VERSION`+`*UNIT`)을 보면 `입력 오류` 로 끝내고 오류 보고를 보내지 않게(engine.cjs failKind 정규식에 `입력 오류` 추가).
+- 외부 모델도 `mgt_import.py` 로 요소 대응표를 만들면 stage4_selftest 의 가상 결과표 회귀를 그대로 돌릴 수 있다(수직=기둥, 수평은 단면명 첫 글자 C/G/B, 층은 *STORY 레벨). 해석 결과표 실물은 여전히 없음 → 파서 보정은 첫 오류 보고로.

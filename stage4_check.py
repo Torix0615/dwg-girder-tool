@@ -169,6 +169,9 @@ def parse_result(path):
         except UnicodeDecodeError:
             continue
     lines = [l.rstrip("\r\n") for l in text.splitlines()]
+    head = "\n".join(lines[:40]).upper()
+    if "MIDAS GEN TEXT(MGT)" in head or ("*VERSION" in head and "*UNIT" in head):
+        raise SystemExit("입력 오류: 첨부한 파일은 MIDAS 모델(MGT) 입니다 — 4단계에는 MIDAS 에서 해석한 결과표(Beam Force: Elem, Load, Part, Axial, Shear, Moment 열)를 텍스트/CSV 로 내보낸 파일을 첨부해야 합니다")
     hdr_i = hdr = delim = None
     for i, l in enumerate(lines):
         for d in ("\t", ",", None):
