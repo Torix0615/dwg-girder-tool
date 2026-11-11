@@ -99,6 +99,19 @@ EL = json.load(open(elem_p, encoding="utf-8"))
 SECS = {int(k): v for k, v in EL["sections"].items()}
 elements = [e for e in EL["elements"] if e["kind"] in ("col", "girder", "beam")]
 by_id = {e["id"]: e for e in elements}
+# 콘크리트 강도: 전문가 모델(mgt_import 로 읽은 MGT)은 요소 재료 등급(C27·C30·C35)을 쓰고, 등급을 못 읽었거나 3단계가 만든 대응표면 설정값
+MODEL_FCK = (EL.get("source") or {}).get("importer") == "mgt_import"
+MATS = EL.get("materials") or {}
+
+
+def fck_of(e):
+    if MODEL_FCK:
+        f = (MATS.get(str(e.get("mat"))) or {}).get("fck")
+        if f:
+            return float(f)
+    return FCK_COL if e["kind"] == "col" else FCK_BEAM
+
+
 log(f"요소 {len(EL['elements'])}개 중 검토 대상 {len(elements)}개 (기둥 {sum(e['kind']=='col' for e in elements)} 거더 {sum(e['kind']=='girder' for e in elements)} 보 {sum(e['kind']=='beam' for e in elements)})")
 
 # ---------------- 결과표 파서 ----------------
@@ -386,7 +399,7 @@ def radial_dc(curve, Pu, Mu):
 
 def check_column(e, dims, rebar, rws):
     """dims=(H,B) H=요소 z축(모멘트-y 깊이), B=요소 y축(모멘트-z 깊이). 반환 dict"""
-    H, B = dims; n, D = rebar["main"]; tie = rebar["tie"][0]; cover = COVER["col"]; fck = FCK_COL
+    H, B = dims; n, D = rebar["main"]; tie = rebar["tie"][0]; cover = COVER["col"]; fck = fck_of(e)
     res = {"dc": 0.0, "flags": [], "gov": None}
     layers = {"y": col_layers(H, B, n, D, cover, tie), "z": col_layers(B, H, n, D, cover, tie)}
     if layers["y"] is None or layers["z"] is None:
@@ -467,7 +480,7 @@ def beam_shear(b, d, stir, fck, fyt):
 
 
 def check_beam(e, dims, rebar, rws):
-    H, B = dims; cover = COVER[e["kind"]]; fck = FCK_BEAM; stir = rebar["stir"]
+    H, B = dims; cover = COVER[e["kind"]]; fck = fck_of(e); stir = rebar["stir"]
     res = {"dc": 0.0, "dc_m": 0.0, "dc_v": 0.0, "flags": [], "gov": None}
     cap = {}
     for pos, key in (("end", "top"), ("mid", "bot")):
@@ -615,7 +628,7 @@ for i, e in enumerate(elements):
     rebar = REBAR0[e["kind"]]
     rws = rows_by_elem.get(e["id"])
     out = {"id": e["id"], "kind": e["kind"], "floor": e.get("floor"), "sec": e["sec"], "sec_name": sec.get("name"), "H": dims[0], "B": dims[1], "len": e.get("len"),
-           "rebar": rebar}
+           "fck": fck_of(e), "rebar": rebar}
     if not rws:
         out.update({"status": "none", "dc": None}); cnt["none"] += 1; results.append(out); continue
     r = check(e, dims, rebar, rws)
@@ -666,7 +679,7 @@ check_json = {"version": 1, "summary": summary,
 json.dump(check_json, open(os.path.join(out_dir, "check.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=0)
 
 from stage4_xlsx import write_xlsx
-hdr = ["요소", "층", "종류", "단면 H×B\n(mm)", "주근(상/하)", "띠·스터럽", "Pu (kN)", "Mu (kN·m)", "Vu (kN)", "지배 하중", "위치", "D/C 휨·PM", "D/C 전단", "D/C", "판정",
+hdr = ["요소", "층", "종류", "단면 H×B\n(mm)", "fck\n(MPa)", "주근(상/하)", "띠·스터럽", "Pu (kN)", "Mu (kN·m)", "Vu (kN)", "지배 하중", "위치", "D/C 휨·PM", "D/C 전단", "D/C", "판정",
        "추천 단면 H×B", "추천 주근", "추천 띠·스터럽", "추천 D/C", "비고"]
 rows_x = [[(h, 1) for h in hdr]]
 order = {"col": 0, "girder": 1, "beam": 2}
@@ -686,7 +699,7 @@ for r in sorted(results, key=lambda x: (order[x["kind"]], x["id"])):
     part_ko = {"I": "I단", "J": "J단", "M": "중앙"}.get(g.get("part"), "")
     if r["kind"] == "col" and g.get("axis"):
         part_ko += f" M{g['axis']}"
-    rows_x.append([r["id"], r.get("floor") or "", KIND_KO[r["kind"]], f"{r['H']:.0f}×{r['B']:.0f}", bars, stir, g.get("Pu", ""), g.get("Mu", ""), g.get("Vu", ""),
+    rows_x.append([r["id"], r.get("floor") or "", KIND_KO[r["kind"]], f"{r['H']:.0f}×{r['B']:.0f}", round(r["fck"]), bars, stir, g.get("Pu", ""), g.get("Mu", ""), g.get("Vu", ""),
                    g.get("load", ""), part_ko, r.get("dc_m") if r["kind"] != "col" else r.get("dc"), r.get("dc_v") if r["kind"] != "col" else "", r.get("dc") if r["dc"] is not None else "",
                    judge, *rec_cells, "; ".join(r.get("flags") or [])])
 sum_rows = [[("항목", 1), ("값", 1)],
@@ -697,6 +710,14 @@ for k in ("col", "girder", "beam"):
     d = by_kind.get(k)
     if d:
         sum_rows.append([f"{KIND_KO[k]} OK/NG/없음", f"{d['ok']} / {d['ng']} / {d['none']}  (치수 변경 {d['dims']})"])
+fck_used = sorted({round(r["fck"]) for r in results})
+sum_rows.append(["콘크리트 강도 fck", ("모델 MGT 의 재료 등급 사용" if MODEL_FCK else "설정값 사용") + f" — {', '.join(str(f) for f in fck_used)} MPa"
+                 + (" (등급을 읽지 못한 재료는 설정값)" if MODEL_FCK and any(not (m or {}).get("fck") for m in MATS.values()) else "")])
+EXC = EL.get("excluded") or {}
+if EXC.get("reasons"):
+    sum_rows.append(["검토 제외 요소(사유별)", ", ".join(f"{k} {v}개" for k, v in EXC["reasons"].items())])
+    if EXC.get("sections"):
+        sum_rows.append(["검토 제외 단면(요소 수)", ", ".join(f"{k} {v}" for k, v in list(EXC["sections"].items())[:40])])
 sum_rows += [["하중", combo_note], ["하중 목록", ", ".join(loads)],
              ["단위 환산", f"힘 ×{meta['force_to_kN']:g} → kN, 모멘트 ×{meta['moment_to_kNmm']:g} → kN·mm (머리글: {' | '.join(meta['header'])})"],
              ["읽은 행 / 건너뜀 / 모르는 요소", f"{meta['rows']} / {meta['skipped']} / {meta['unknown_count']}" + (f" {meta['unknown_ids'][:20]}" if meta["unknown_ids"] else "")],
@@ -708,7 +729,7 @@ load_rows = [[("요소", 1), ("하중", 1), ("위치", 1), ("N (kN)", 1), ("Vy (
 for r in sorted(rows, key=lambda x: (x["elem"], x["load"], x["part"]))[:20000]:
     load_rows.append([r["elem"], r["load"], {"I": "I단", "J": "J단", "M": "중앙"}[r["part"]], round(r["n"], 1), round(r["vy"], 1), round(r["vz"], 1), round(r["t"] / 1e3, 2), round(r["my"] / 1e3, 2), round(r["mz"] / 1e3, 2)])
 write_xlsx(os.path.join(out_dir, "check.xlsx"), [
-    {"name": "검토결과", "rows": rows_x, "freeze": 1, "widths": [7, 7, 6, 12, 22, 11, 9, 10, 9, 14, 9, 10, 9, 8, 8, 14, 22, 12, 9, 50]},
+    {"name": "검토결과", "rows": rows_x, "freeze": 1, "widths": [7, 7, 6, 12, 6, 22, 11, 9, 10, 9, 14, 9, 10, 9, 8, 8, 14, 22, 12, 9, 50]},
     {"name": "요약", "rows": sum_rows, "widths": [28, 110]},
     {"name": "하중(환산)", "rows": load_rows, "freeze": 1, "widths": [7, 16, 7, 10, 10, 10, 10, 11, 11]},
 ])

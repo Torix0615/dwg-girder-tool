@@ -1,8 +1,12 @@
 """외부 MIDAS Gen MGT(전문가가 만든 모델) → 4단계 요소 대응표(_elements.json) 변환.
 python mgt_import.py <모델.mgt> <출력 _elements.json>
  - 3단계(stage3_mgt.py)가 만드는 대응표와 같은 형식(kN·mm)으로 써서 stage4_check / stage4_selftest 에 그대로 넣는다.
- - *UNIT 의 길이 단위(M/CM/MM)를 읽어 mm 로 환산. 더미 재료·단면(9999, 이름 Dummy)과 BEAM 이 아닌 요소는 제외.
- - 종류: 수직(길이의 70% 이상이 Z 방향) = 기둥, 수평은 단면명 첫 글자(C/G/B) → 기둥/거더/보, 그 외 = 거더.
+ - 앱의 "4단계 구조 검토 (MGT)" 가 이 스크립트로 모델을 읽는다(1.6.0 — 1·2·3단계 없이 4단계만 단독 실행).
+ - *UNIT 의 길이 단위(M/CM/MM)를 읽어 mm 로 환산. BEAM 이 아닌 요소는 제외.
+ - 검토 제외: 더미(재료·단면 9999·이름 Dummy, 치수 100mm 미만), 직사각형(SB)이 아닌 단면(H형강·SRC), WG(벽 위 가상 보). 사유·단면명별 개수를 excluded 에 기록.
+ - 종류: 수직(길이의 70% 이상이 Z 방향) = 기둥, 수평은 단면명 안의 G숫자/B숫자(RG1·-1G1 = 거더, RB1·RaB1 = 보), 없으면 첫 글자 C = 기둥·그 외 = 거더.
+ - 재료 fck: 이름(C30) 또는 DB 등급 칸(C30) → stage4_check 가 요소별 콘크리트 강도로 쓴다(없으면 설정값).
+ - 샘플 3종(2026-11-11, Downloads/simple): 250930 흑석동 어린이집(128요소) / 250714 지하주차장 2BL(RG1·-1B1 표기, D·WG 1mm 더미) / 261109 흑석동 11지구(15,487요소, APT WG, RaB1).
  - 층: *STORY 레벨 중 요소 아래 절점 z 이하의 가장 높은 층(없으면 'F0'). 층고 = 층 레벨 간격의 최빈값.
  - 첫 실제 샘플: 피드백 1d7f01 답변 5 샘플(250930 흑석동 어린이집, KN·M, C1(500x500)/G1(400x600)/B1(400x600), 2026-11-10).
 """
@@ -37,6 +41,10 @@ def cells(line):
     return [c.strip() for c in line.split(",")]
 
 
+if not blocks.get("NODE") or not blocks.get("ELEMENT") or not blocks.get("SECTION"):
+    sys.exit("[원인] 입력 — MIDAS Gen 모델 파일(.mgt)이 아니거나 *NODE/*ELEMENT/*SECTION 이 없음. MIDAS 에서 File → Export → MIDAS Gen MGT File 로 저장한 파일을 선택")
+
+
 # 단위
 scale = 1.0
 if blocks.get("UNIT"):
@@ -65,7 +73,9 @@ for l in blocks.get("MATERIAL", []):
     except ValueError:
         continue
     name = c[2] if len(c) > 2 else ""
-    m = re.search(r"C\s*(\d{2,3})", name, re.I)
+    m = re.fullmatch(r"C\s*(\d{2,3})", name, re.I)
+    if not m:  # 이름이 GIRDER·COL 처럼 등급이 아니면 DB 등급 칸(…, KS19(RC), , C30, …)에서 읽는다
+        m = next((mm for mm in (re.fullmatch(r"C(\d{2,3})", p, re.I) for p in c[3:]) if mm), None)
     materials[mid] = {"name": name, "fck": int(m.group(1)) if m else None, "dummy": name.lower() == "dummy" or mid == 9999}
 
 # 단면(SB 직사각형: 'SB' 토큰 뒤 2, H, B)
@@ -76,14 +86,16 @@ for l in blocks.get("SECTION", []):
         sid = int(c[0])
     except ValueError:
         continue  # 2줄 이상 단면(VALUE 형식)의 뒷줄
-    name = c[2] if len(c) > 2 else ""
+    if len(c) < 3 or not re.match(r"[A-Za-z]", c[1]) or sid in sections:
+        continue  # 단면 첫 줄은 '번호, 형식(DBUSER·SRC·VALUE…), 이름' — 숫자로 시작하는 뒷줄이 다른 단면을 덮어쓰지 않게
+    name = c[2]
     H = B = None
     try:
         si = next(j for j, p in enumerate(c) if p.upper() == "SB")
         H = float(c[si + 2]) * scale; B = float(c[si + 3]) * scale
     except (StopIteration, IndexError, ValueError):
         pass
-    sections[sid] = {"name": name, "H": H, "B": B, "dummy": name.lower() == "dummy" or sid == 9999}
+    sections[sid] = {"name": name, "H": H, "B": B, "type": c[1].upper(), "dummy": name.lower() == "dummy" or sid == 9999}
 
 # 층
 stories = []
@@ -104,15 +116,31 @@ def floor_of(z):
     return f or "F0"
 
 
+MIN_DIM = 100.0  # mm — 이보다 작은 직사각형 단면은 하중 전달용 더미(실제 샘플: D·WG 0.001×0.001 m)
+WG_RE = re.compile(r"(?<![A-Z])WG(?![A-Z])")  # 벽 위 가상 보(Wall Girder): WG, APT WG, RF APT WG(400x900)
+
+
+def bare(sec_name):
+    """단면명에서 치수 표기((400x600), 500X900)를 뺀 대문자 이름: 'RaB1(700x600)' → 'RAB1', '-1G1 400X600' → '-1G1'"""
+    s = re.sub(r"\(.*?\)", " ", (sec_name or "").upper())
+    return re.sub(r"\b\d+\s*[X×]\s*\d+\b", " ", s).strip()
+
+
 def kind_of(sec_name, vertical):
+    """수직 = 기둥. 수평은 이름 안의 'G숫자'/'B숫자' 중 먼저 나오는 것(RG1·-1G1·PRG1·CG1 = 거더, RB1·RaB1·-1B1·B2100 = 보),
+    둘 다 없으면 첫 글자 C = 기둥, 그 외 = 거더."""
     if vertical:
         return "col"
-    ch = (sec_name or "").strip()[:1].upper()
-    return {"C": "col", "G": "girder", "B": "beam"}.get(ch, "girder")
+    name = bare(sec_name)
+    m = re.search(r"([GB])\d", name)
+    if m:
+        return "girder" if m.group(1) == "G" else "beam"
+    return "col" if name[:1] == "C" else "girder"
 
 
 elements = []
-skipped = collections.Counter()
+skipped = collections.Counter()       # 제외 사유별 요소 수
+skipped_secs = collections.Counter()  # 제외된 단면 이름별 요소 수(카드·엑셀 표시용)
 for l in blocks.get("ELEMENT", []):
     c = cells(l)
     try:
@@ -128,8 +156,15 @@ for l in blocks.get("ELEMENT", []):
         skipped["형식"] += 1; continue
     if materials.get(mat, {}).get("dummy") or sections.get(sec, {}).get("dummy"):
         skipped["더미"] += 1; continue
-    if n1 not in nodes or n2 not in nodes or sec not in sections or sections[sec]["H"] is None:
+    if n1 not in nodes or n2 not in nodes or sec not in sections:
         skipped["절점·단면 없음"] += 1; continue
+    sc = sections[sec]
+    if sc["H"] is None or sc["B"] is None:
+        skipped["직사각형 RC 아님(H형강·SRC 등)"] += 1; skipped_secs[sc["name"]] += 1; continue
+    if min(sc["H"], sc["B"]) < MIN_DIM:
+        skipped["더미"] += 1; skipped_secs[sc["name"]] += 1; continue
+    if WG_RE.search(bare(sc["name"])):
+        skipped["WG(벽 위 가상 보)"] += 1; skipped_secs[sc["name"]] += 1; continue
     p, q = nodes[n1], nodes[n2]
     L = ((q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2 + (q[2] - p[2]) ** 2) ** 0.5
     if L < 1.0:
@@ -140,12 +175,13 @@ for l in blocks.get("ELEMENT", []):
                      "nodes": [n1, n2], "len": round(L, 1), "z": round(zlow, 1)})
 
 if not elements:
-    sys.exit("[원인] 입력 — MGT 에서 검토할 BEAM 요소를 찾지 못함(*NODE/*ELEMENT/*SECTION 확인)")
+    sys.exit(f"[원인] 입력 — MGT 에서 검토할 직사각형 RC 기둥·거더·보 요소를 찾지 못함(제외 {dict(skipped) or '없음'})")
 used_secs = {e["sec"] for e in elements}
 used_mats = {e["mat"] for e in elements}
 out = {
     "version": 1, "unit": {"force": "kN", "length": "mm"}, "story_h": story_h,
-    "source": {"file": mgt_p.replace("\\", "/").split("/")[-1], "unit": f"{force_u}, {lu}", "importer": "mgt_import"},
+    "source": {"file": mgt_p.replace("\\", "/").split("/")[-1], "unit": f"{force_u}, {lu}", "importer": "mgt_import", "encoding": enc},
+    "excluded": {"reasons": dict(skipped), "sections": dict(skipped_secs.most_common())},
     "materials": {str(k): {"name": v["name"], "fck": v["fck"]} for k, v in materials.items() if k in used_mats},
     "sections": {str(k): {"name": v["name"], "H": round(v["H"]), "B": round(v["B"])} for k, v in sections.items() if k in used_secs},
     "stories": stories or [{"name": "F0", "z": 0.0}],
@@ -155,7 +191,9 @@ json.dump(out, open(out_p, "w", encoding="utf-8"), ensure_ascii=False, indent=0)
 n = collections.Counter(e["kind"] for e in elements)
 nofck = [v["name"] for k, v in materials.items() if k in used_mats and v["fck"] is None]
 print(f"요소 대응표 저장: {out_p} — 단위 {force_u}·{lu}(×{scale:g}→mm), 요소 {len(elements)}개(기둥 {n['col']} 거더 {n['girder']} 보 {n['beam']}), "
-      f"단면 {len(out['sections'])}개 {', '.join(f'{v['name']} H{v['H']}×B{v['B']}' for v in out['sections'].values())}, "
+      f"단면 {len(out['sections'])}개 {', '.join(f'{v['name']} H{v['H']}×B{v['B']}' for v in list(out['sections'].values())[:12])}{' …' if len(out['sections']) > 12 else ''}, "
       f"층 {len(stories)}개(층고 {story_h:g}), 제외 {dict(skipped) or '없음'}" + (f", fck 미상 재료 {nofck}" if nofck else ""), flush=True)
+fcks = sorted({v["fck"] for k, v in materials.items() if k in used_mats and v["fck"]})
 print("SUMMARY=" + json.dumps({"elements": len(elements), "col": n["col"], "girder": n["girder"], "beam": n["beam"], "sections": len(out["sections"]),
-                              "stories": len(stories), "scale": scale, "skipped": dict(skipped)}, ensure_ascii=False), flush=True)
+                              "stories": len(stories), "scale": scale, "unit": f"{force_u}·{lu}", "fck": fcks, "fck_unknown": nofck,
+                              "skipped": dict(skipped), "skipped_secs": dict(skipped_secs.most_common(8))}, ensure_ascii=False), flush=True)

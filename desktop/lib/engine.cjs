@@ -10,6 +10,7 @@ const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
 const EXT = ['.dwg', '.dxf'];
+const MGT_EXT = '.mgt'; // 4단계 단독 실행: 수작업을 마친 MIDAS 모델(.mgt)을 바로 받아 구조 검토(1.6.0)
 
 function cmpVer(a, b) {
   const pa = String(a || '0').split('.').map((n) => parseInt(n, 10) || 0);
@@ -242,12 +243,16 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
   function enqueue(paths) {
     let added = null;
     for (const p of paths || []) {
-      if (!p || !EXT.includes(path.extname(p).toLowerCase())) continue;
+      const ext = p ? path.extname(p).toLowerCase() : '';
+      const s4 = ext === MGT_EXT; // .mgt = 4단계 단독 작업(모델 읽기 → 결과표 첨부 → 검토)
+      if (!p || (!s4 && !EXT.includes(ext))) continue;
       if (!fs.existsSync(p)) continue;
       if (jobs.some((j) => j.src === p && (j.state === 'queued' || j.state === 'running'))) continue;
       const id = ++seq;
       const base = path.basename(p, path.extname(p));
-      jobs.push({ id, src: p, name: path.basename(p), state: 'queued', step: '', stepIdx: 0, total: 0, started: 0, ended: 0, outdir: path.join(RESULTS, `${id}_${base}`), result: null, report: null, message: '', feedback: null, log: [] });
+      const job = { id, src: p, name: path.basename(p), state: 'queued', step: '', stepIdx: 0, total: 0, started: 0, ended: 0, outdir: path.join(RESULTS, `${id}_${base}`), result: null, report: null, message: '', feedback: null, log: [] };
+      if (s4) job.kind = 's4';
+      jobs.push(job);
       added = id;
     }
     saveJobs();
@@ -266,7 +271,99 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     run(j);
   }
 
+  /** 4단계 단독 작업: 모델 MGT 를 결과 폴더로 복사(검토 시점의 모델을 고정)하고 mgt_import.py 로 요소 대응표를 만든다. 끝나면 done → 카드에서 결과표 첨부 */
+  function runImport(j) {
+    current = j;
+    j.state = 'running';
+    j.started = Date.now();
+    j.total = 1;
+    j.stepIdx = 0;
+    j.step = '모델 읽기';
+    j.model = null;
+    fs.mkdirSync(j.outdir, { recursive: true });
+    saveJobs();
+    emit();
+    const base = path.basename(j.src, path.extname(j.src));
+    const model = path.join(j.outdir, `${base}.mgt`);
+    const elem = path.join(j.outdir, `${base}_elements.json`);
+    let err = '';
+    const finish = (code) => {
+      j.ended = Date.now();
+      if (j.state === 'cancelled') {
+        j.message = '취소됨';
+      } else if (code === 0 && fs.existsSync(elem) && j.model) {
+        j.state = 'done';
+        j.step = '완료';
+        j.mgt = model;
+        j.elements = elem;
+        j.message = `모델 읽기 완료 — 검토 대상 ${j.model.elements}개`;
+      } else {
+        j.state = 'failed';
+        j.message = `모델 읽기 실패 (코드 ${code})`;
+        const lines = err.trim().split('\n').filter((l) => l.trim());
+        const last = lines.slice(-1)[0] || j.log.slice(-1)[0] || '';
+        const m = /\[원인\]\s*(입력|오류)\s*[—-]\s*(.+)/.exec(last);
+        j.failKind = m ? (m[1] === '입력' ? 'input' : 'error') : 'error';
+        j.failReason = m ? m[2].trim() : last.trim();
+        j.errorReport = null;
+        if (err.trim()) j.log.push(...lines.slice(-6));
+      }
+      log(`${j.state}: ${j.name} ${j.message}`);
+      proc = null;
+      current = null;
+      saveJobs();
+      emit();
+      if (j.state === 'failed' && j.failKind === 'error' && onError) onError(j);
+      next();
+    };
+    try {
+      fs.copyFileSync(j.src, model);
+    } catch (e) {
+      err = `[원인] 입력 — 모델 파일을 읽을 수 없음: ${e.message}`;
+      finish(1);
+      return;
+    }
+    log(`4단계 모델 읽기: ${j.src}`);
+    proc = spawn(PY, [path.join(APP, 'mgt_import.py'), model, elem], { cwd: APP, env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' }, windowsHide: true });
+    let buf = '';
+    let closed = false;
+    proc.stdout.on('data', (chunk) => {
+      buf += chunk.toString('utf8');
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).replace(/\r$/, '');
+        buf = buf.slice(i + 1);
+        if (!line.trim()) continue;
+        if (line.startsWith('SUMMARY=')) {
+          try {
+            j.model = JSON.parse(line.slice(8));
+          } catch {
+            /* */
+          }
+        } else {
+          j.log.push(line.length > 600 ? line.slice(0, 600) + ' …' : line);
+        }
+      }
+    });
+    proc.stderr.on('data', (c) => {
+      err += c.toString('utf8');
+    });
+    proc.on('error', (e) => {
+      err += `\n실행 오류: ${e.message}`;
+      if (!closed) {
+        closed = true;
+        finish(-1);
+      }
+    });
+    proc.on('close', (code) => {
+      if (closed) return;
+      closed = true;
+      finish(code);
+    });
+  }
+
   function run(j) {
+    if (j.kind === 's4') return runImport(j);
     current = j;
     j.state = 'running';
     j.started = Date.now();
@@ -388,7 +485,10 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
   function runStage4(id, txtPath) {
     const j = jobs.find((x) => x.id === id);
     if (!j || j.state !== 'done') return { ok: false, message: '완료된 작업에서만 검토할 수 있습니다' };
-    if (!j.mgt || !j.elements || !fs.existsSync(j.elements)) return { ok: false, message: '3단계 MGT·요소 대응표가 없습니다 (3단계까지 실행한 작업만 가능, 1.5.0 이후 생성분)' };
+    // 1.6.0: 4단계는 수작업(MIDAS 수정·해석)을 마친 모델 MGT 로만 검토한다. 3단계가 만든 MGT 를 고치면 요소 번호가 달라져
+    // 도면 작업의 대응표로는 엉뚱한 요소를 검토하게 되므로 도면 작업 카드에서는 실행하지 않는다.
+    if (j.kind !== 's4') return { ok: false, message: '4단계는 수작업을 마친 MIDAS 모델(.mgt)로 시작합니다 — "4단계 구조 검토 (MGT)" 를 눌러 모델을 선택해 주세요' };
+    if (!j.mgt || !j.elements || !fs.existsSync(j.elements)) return { ok: false, message: '모델 MGT·요소 대응표가 없습니다 — 모델을 다시 선택해 주세요' };
     if (proc4) return { ok: false, message: '다른 검토가 진행 중입니다' };
     if (!txtPath || !fs.existsSync(txtPath)) return { ok: false, message: '결과표 파일이 없습니다' };
     const dir = path.join(j.outdir, 'stage4');
@@ -396,7 +496,7 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     fs.mkdirSync(dir, { recursive: true });
     const base = path.basename(j.src, path.extname(j.src));
     const ext = path.extname(txtPath) || '.txt';
-    const txt = path.join(dir, `${base}_MIDAS_결과${ext}`);
+    const txt = path.join(dir, j.kind === 's4' ? `${base}_결과표${ext}` : `${base}_MIDAS_결과${ext}`);
     fs.copyFileSync(txtPath, txt);
     j.stage4 = { state: 'running', started: Date.now(), ended: 0, resultTxt: txt, resultName: path.basename(txtPath), step: '검토 시작', stepIdx: 0, total: S4_STEPS, tail: [], summary: null, xlsx: null, check: null, mgt2: null, applied: null, errorReport: null };
     saveJobs();
@@ -475,7 +575,7 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     if (!s || s.state !== 'done' || !s.check || !fs.existsSync(s.check)) return { ok: false, message: '검토 결과가 없습니다' };
     if (!j.mgt || !fs.existsSync(j.mgt)) return { ok: false, message: '원본 MGT 가 없습니다' };
     const base = path.basename(j.src, path.extname(j.src));
-    const out = path.join(path.dirname(s.check), `${base}_MIDAS_수정.mgt`);
+    const out = path.join(path.dirname(s.check), j.kind === 's4' ? `${base}_수정.mgt` : `${base}_MIDAS_수정.mgt`);
     const r = spawnSync(PY, [path.join(APP, 'stage4_apply.py'), j.mgt, s.check, out], { cwd: APP, env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' }, windowsHide: true, encoding: 'utf8' });
     const o = (r.stdout || '') + (r.stderr || '');
     const m = /SUMMARY=(.+)/.exec(o);
@@ -504,7 +604,7 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     return jobs.filter((j) => j.state === 'failed' && j.failKind === 'error' && !(j.errorReport && j.errorReport.sent));
   }
 
-  return { enqueue, cancel, remove, setFeedback, setErrorReport, pendingErrorReports, state, versions, ensureInstalled, ensureConfig, getSettings, setSettings, runStage4, applyStage4, stage4Busy, isIdle: () => !current && !proc4, job: (id) => jobs.find((j) => j.id === id) || null, paths: { APP, RT, CFG, PY, RESULTS }, EXT };
+  return { enqueue, cancel, remove, setFeedback, setErrorReport, pendingErrorReports, state, versions, ensureInstalled, ensureConfig, getSettings, setSettings, runStage4, applyStage4, stage4Busy, isIdle: () => !current && !proc4, job: (id) => jobs.find((j) => j.id === id) || null, paths: { APP, RT, CFG, PY, RESULTS }, EXT, MGT_EXT };
 }
 
 module.exports = { createEngine, cmpVer, readText, swapDir };

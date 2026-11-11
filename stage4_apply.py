@@ -8,7 +8,15 @@ import sys, re, json, time
 if len(sys.argv) < 4:
     sys.exit(__doc__)
 mgt_p, chk_p, out_p = sys.argv[1:4]
-src = open(mgt_p, encoding="utf-8", errors="replace").read().splitlines()
+# 원본 인코딩 유지: MIDAS 가 저장한 모델은 cp949(한글 그룹명·단면명) — utf-8 로만 읽으면 한글이 깨져 나감(2026-11-11 샘플 6,902자)
+_raw = open(mgt_p, "rb").read()
+ENC = "latin-1"
+for _enc in ("utf-8-sig" if _raw[:3] == b"\xef\xbb\xbf" else "utf-8", "cp949"):
+    try:
+        _raw.decode(_enc); ENC = _enc; break
+    except UnicodeDecodeError:
+        continue
+src = _raw.decode(ENC).splitlines()
 chk = json.load(open(chk_p, encoding="utf-8"))
 PREFIX = {"col": "C", "girder": "G", "beam": "B"}
 BASE_ID = {"col": 10, "girder": 100, "beam": 500}
@@ -127,6 +135,6 @@ if out and out[0].startswith(";"):
     out = out[:1] + head + out[1:]
 else:
     out = head + out
-open(out_p, "w", encoding="utf-8", newline="\r\n").write("\n".join(out) + "\n")
+open(out_p, "w", encoding=ENC, errors="replace", newline="\r\n").write("\n".join(out) + "\n")
 print(f"수정 MGT 저장: {out_p} (요소 {n_changed}개 단면 교체, 새 단면 {len(new_secs)}개: {', '.join(f'{v[1]} {k[1]}x{k[2]}' for k, v in new_secs.items())})", flush=True)
-print("SUMMARY=" + json.dumps({"changed": n_changed, "new_sections": [{"id": v[0], "name": v[1], "kind": k[0], "H": k[1], "B": k[2]} for k, v in new_secs.items()]}, ensure_ascii=False), flush=True)
+print("SUMMARY=" + json.dumps({"changed": n_changed, "encoding": ENC, "new_sections": [{"id": v[0], "name": v[1], "kind": k[0], "H": k[1], "B": k[2]} for k, v in new_secs.items()]}, ensure_ascii=False), flush=True)

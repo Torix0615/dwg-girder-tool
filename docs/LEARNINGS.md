@@ -74,3 +74,18 @@
 - *DGN-SECT(설계 단면)가 *SECTION 과 같은 줄로 따로 있다. 새 단면을 *SECTION 에만 넣으면 설계 단면이 비므로 두 블록 모두에 추가.
 - 전문가가 "MGT 파일을 새로 첨부"를 모델 파일로 이해하고 모델 MGT 를 결과표 칸에 넣을 가능성이 크다 → 파서가 MGT 머리말(`midas Gen Text(MGT)`/`*VERSION`+`*UNIT`)을 보면 `입력 오류` 로 끝내고 오류 보고를 보내지 않게(engine.cjs failKind 정규식에 `입력 오류` 추가).
 - 외부 모델도 `mgt_import.py` 로 요소 대응표를 만들면 stage4_selftest 의 가상 결과표 회귀를 그대로 돌릴 수 있다(수직=기둥, 수평은 단면명 첫 글자 C/G/B, 층은 *STORY 레벨). 해석 결과표 실물은 여전히 없음 → 파서 보정은 첫 오류 보고로.
+
+## 2026-11-11 (v1.5.1 배포 — 1d7f01 답변 5 샘플 반영)
+- engine.cjs 한 줄 변경(failKind 정규식)의 배포 전 검증은 Electron·CDP 없이 Node 로 createEngine 을 직접 호출해 runStage4/applyStage4 실경로를 돌리는 것으로 충분했다(임시 root + app 에 py 복사 + runtime 정션, 3경우 PASS). 화면 변경이 없으면 이 방식이 CDP 보다 빠르고 배포 런타임(임베디드 파이썬)까지 함께 검증된다.
+- 앱의 4단계는 3단계가 만든 MGT(KN·MM) 기준으로만 동작한다. stage4_apply 의 단위 환산·DGN-SECT 추가는 전문가 자체 모델을 받을 때를 위한 준비이고, 모델 첨부 UI 는 아직 없다(mgt_import.py 는 회귀용, app.zip 미포함). 전문가가 "MGT 를 새로 첨부"를 자기 모델로 뜻했는지 확인 후 결정.
+- 릴리스 노트는 앱에서 전문가가 읽는다 → 화면에서 달라지는 것(입력 오류 안내, 새 단면명 표기)을 먼저, 내부 보강은 뒤에 적는다.
+
+## 2026-11-11 (v1.6.0 — 4단계 단독 실행, 수작업 모델 샘플 3종)
+- 업무 순서를 잘못 이해하고 있었다: 3단계 MGT 를 그대로 해석하는 것이 아니라 1·2·3단계 → 캐드·MIDAS 수작업 → 4단계다. 수작업 후에는 요소 번호가 달라지므로 4단계 입력은 항상 "수작업을 마친 모델 MGT + 그 결과표"여야 하고, 도면 작업의 대응표로 검토하는 경로는 조용히 틀린 결과를 내므로 막았다.
+- 계획을 세우기 전에 실제 샘플 3개를 현 코드에 그대로 넣어 본 것이 수정 범위를 정했다. 한 개(어제 샘플)만 통과하던 가정 3가지가 깨졌다: 단면명 첫 글자 규칙(RB1·-1B1·RaB1), 더미는 9999/Dummy 뿐이라는 가정(D·WG 0.001×0.001), 파일은 utf-8 이라는 가정(전부 cp949).
+- MIDAS 가 저장한 MGT 는 cp949 다. `open(..., encoding="utf-8", errors="replace")` 는 오류 없이 한글을 깨뜨려 쓰므로(6,902자) 읽기는 bytes → utf-8 엄격 → cp949 순으로 판별하고 같은 인코딩으로 써야 한다. selftest 에 "수정본에서 원본 줄이 바뀐 요소 수보다 많이 변하면 FAIL" 검사를 넣어 다시 못 새게 했다.
+- 재료 이름이 GIRDER·COL 인 모델은 등급이 이름이 아니라 DB 등급 칸(…, KS19(RC), , C30, …)에 있다. 단면 블록은 여러 줄 단면(SRC 등)의 뒷줄이 숫자로 시작해 다른 단면 번호를 덮어쓸 수 있어 "둘째 칸이 영문 형식명"인 줄만 단면 첫 줄로 본다.
+- 새 작업 종류는 기존 대기열(enqueue→run)에 `kind` 분기 하나로 넣는 편이 취소·저장·오류 보고·피드백 첨부를 그대로 재사용한다. 피드백 zip 은 원본과 결과 폴더 사본이 같은 파일 이름이라 사본만 첨부한다.
+- dev 앱은 시작 때 `dist_build/pkg/app`(이전 릴리스) 을 userData 로 복사한다 → 수정한 .py 를 userData/app 에만 넣으면 덮어쓰인다. 배포 전 화면 검증은 pkg/app 에 바뀐 .py 를 복사한 뒤 띄운다(release.py 가 pkg/app 을 다시 만든다).
+- 배포 시각을 지정받으면(이번엔 "00시", 이후 "지금"으로 변경): 릴리스 노트를 `dist_build/out/notes_<버전>.txt`(git 제외)에 써 두고 `release.py <버전> --notes-file=… --shell --dry` 로 설치본 빌드까지 미리 확인한다. dry 는 latest.json·CHANGELOG.md·desktop/package.json 을 바꾸므로 `git checkout --` 으로 되돌린다(안 되돌리면 실제 배포 때 CHANGELOG 항목이 두 번 들어감). 예약은 작업 스케줄러 1회 작업(Register-ScheduledTask, StartWhenAvailable) → ASCII·CRLF `.cmd` 가 release.py 를 돌리고 로그 마지막 줄에 EXIT 코드를 남기는 방식. 취소 = Unregister-ScheduledTask.
+- Electron → Rust(Tauri) 전환 문의(11-11): 권하지 않음으로 답함. 무겁고 느린 쪽은 Python 엔진(런타임 245MB, 처리 시간)이라 셸만 바꾸면 설치본 약 60MB·대기 메모리만 줄고, 셸 4개 모듈 재작성·업데이트 재설계·기존 설치 PC 이전 위험이 생긴다. 엔진까지 Rust 로 가면 ezdxf·shapely·scipy 대체와 "규칙 수정 → app.zip 만 교체" 이점을 잃는다. 용량이 문제면 런타임에서 안 쓰는 라이브러리 제거가 먼저.

@@ -6,6 +6,7 @@ const CHANNELS = ['engine-state', 'update-status', 'install-progress', 'feedback
 contextBridge.exposeInMainWorld('girder', {
   pathOf: (file) => webUtils.getPathForFile(file),
   startJob: () => ipcRenderer.invoke('start-job'),
+  startStage4: () => ipcRenderer.invoke('start-stage4'),
   run: (paths) => ipcRenderer.invoke('run', paths),
   cancel: () => ipcRenderer.invoke('cancel'),
   removeJob: (id) => ipcRenderer.invoke('remove-job', id),

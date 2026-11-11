@@ -1,6 +1,19 @@
 {
  "notes": [
   {
+   "version": "1.6.0",
+   "date": "2026-11-11",
+   "items": [
+    "4단계 구조 검토를 도면 작업 없이 단독 실행: 첫 화면·왼쪽 목록 아래·트레이의 [4단계 구조 검토 (MGT)] 로 수작업을 마친 MIDAS 모델(.mgt)을 선택(창에 끌어다 놓아도 됨) → 해석 결과표 첨부 → 검토 → 승인(수정 MGT)",
+    "모델을 선택하면 카드에 검토 대상(기둥·거더·보 수)과 검토 제외 목록(더미 단면, WG 벽 위 가상 보, H형강·SRC 단면)을 표시",
+    "도면 작업 카드에서는 4단계를 실행하지 않고 안내와 시작 버튼만 표시(수작업 후에는 요소 번호가 달라지기 때문). 이전 버전에서 검토한 결과의 엑셀·수정 MGT 내려받기는 유지",
+    "단면명으로 거더·보 구분 보강: RG1·-1G1·PRG1 = 거더, RB1·RaB1·-1B1 = 보 (종전에는 거더로 분류)",
+    "콘크리트 강도는 모델의 재료 등급(C27·C30·C35)을 부재별로 사용하고 등급이 없을 때만 설정값 사용. 검토 엑셀에 fck 열과 검토 제외 목록 추가",
+    "수정 MGT 가 모델의 한글 이름(그룹·단면)을 그대로 유지(종전에는 한글이 깨짐)",
+    "4단계 검토 설정을 실행 범위(1·2·3단계)와 무관하게 항상 표시"
+   ]
+  },
+  {
    "version": "1.5.1",
    "date": "2026-11-11",
    "items": [
@@ -133,12 +146,12 @@
    ]
   }
  ],
- "app_version": "1.5.1",
- "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.5.1/app.zip",
+ "app_version": "1.6.0",
+ "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.6.0/app.zip",
  "runtime_version": "1",
  "runtime_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/runtime-v1/runtime.zip",
- "shell_version": "1.5.1",
- "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.5.1/GirderTool-Setup-1.5.1.exe",
- "shell_sha256": "92effe14d03a0c5ca83dbc65f428e745c495e189b466c7b1cbfbe4b7420f5148",
- "shell_size": 145826730
+ "shell_version": "1.6.0",
+ "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.6.0/GirderTool-Setup-1.6.0.exe",
+ "shell_sha256": "f17921dfaf09549eb8ba3cd8115d9b85ab5f0fdb0386c2a879e15502ff24c0b2",
+ "shell_size": 145833849
 }

@@ -33,13 +33,15 @@ function buildZip({ root, engine, text, scope, category, job, log, out }) {
   const head = [`구분: ${SCOPE_LABEL[scope] || scope || '-'}`];
   if (category) head.push(`종류(사용자 선택): ${KIND_LABEL[category] || category}`);
   head.push(`자동 분류: ${KIND_LABEL[auto.category]} (UI: ${auto.ui.join('·') || '-'} / 규칙: ${auto.rule.join('·') || '-'})`);
-  if (job) head.push(`대상 도면: ${job.src}`, `결과: ${job.result ? path.basename(job.result) : '(실패)'} / ${job.message}`);
+  const isS4 = Boolean(job && job.kind === 's4'); // 4단계 단독 작업: 원본 = 모델 MGT(결과 폴더 사본이 있으면 사본만 첨부 — 같은 파일 이름 중복 방지)
+  if (isS4) head.push(`대상 모델(4단계 단독): ${job.src}`, `모델 읽기: ${job.message}${job.model ? ` / 기둥 ${job.model.col}·거더 ${job.model.girder}·보 ${job.model.beam} / 제외 ${JSON.stringify(job.model.skipped || {})}` : ''}`);
+  else if (job) head.push(`대상 도면: ${job.src}`, `결과: ${job.result ? path.basename(job.result) : '(실패)'} / ${job.message}`);
   else head.push('대상 도면: (없음 — 도면 작업 없이 보낸 피드백)');
   const s4 = job && job.stage4;
   if (s4) head.push(`4단계 구조 검토: ${s4.state} / ${s4.message || ''} / 결과표 ${s4.resultName || '-'}`);
   const s4dir = s4 && s4.resultTxt ? path.dirname(s4.resultTxt) : null;
   const attach = job
-    ? [job.src, job.result, job.mgt, job.report, s4 && s4.resultTxt, s4 && s4.xlsx, s4 && s4.mgt2, s4dir && path.join(s4dir, 'check_log.txt'), s4dir && path.join(s4dir, 'check_error.txt')].filter((p) => p && fs.existsSync(p))
+    ? [isS4 && job.mgt && fs.existsSync(job.mgt) ? null : job.src, job.result, job.mgt, job.report, s4 && s4.resultTxt, s4 && s4.xlsx, s4 && s4.mgt2, s4dir && path.join(s4dir, 'check_log.txt'), s4dir && path.join(s4dir, 'check_error.txt')].filter((p) => p && fs.existsSync(p))
     : [];
   const tf = path.join(tmp, 'feedback.txt');
   fs.writeFileSync(tf, head.join('\n') + '\n\n' + String(text || '').trim() + '\n', 'utf8');
@@ -145,7 +147,7 @@ async function sendError({ root, engine, bundledApp, appVersion, job, log, which
   const text =
     which === 'stage4'
       ? `[자동 오류 보고 — 4단계 구조 검토]\n실패: ${s4.message || '-'}\n원인: ${s4.failReason || '-'}\n결과표: ${s4.resultName || '-'} (첨부)\n도면: ${path.basename(job.src)}`
-      : `[자동 오류 보고]\n실패: ${job.message}\n원인: ${job.failReason || '-'}\n도면: ${path.basename(job.src)}`;
+      : `[자동 오류 보고${job.kind === 's4' ? ' — 4단계 모델 읽기' : ''}]\n실패: ${job.message}\n원인: ${job.failReason || '-'}\n${job.kind === 's4' ? '모델' : '도면'}: ${path.basename(job.src)}`;
   const stamp = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().replace(/[-:T]/g, '').slice(0, 13).replace(/(\d{8})(\d{4})/, '$1_$2');
   const zip = buildZip({ root, engine, text, scope: 'error', job, log, out: path.join(root, 'tmp', `오류보고_${stamp}.zip`) });
   const size = fs.statSync(zip).size;

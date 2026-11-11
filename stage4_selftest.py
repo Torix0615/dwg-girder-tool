@@ -112,8 +112,14 @@ for name in [c[0] for c in cases] + ["tab_mm_combos.txt"]:
         s2 = json.loads(summ2[8:])
         if s2["changed"] != s["dims_changed"]:
             fails.append(f"{name}: 치수 변경 {s['dims_changed']} ≠ MGT 교체 {s2['changed']}")
-        txt = open(os.path.join(od, "modified.mgt"), encoding="utf-8").read()
+        enc2 = s2.get("encoding") or "utf-8"
+        txt = open(os.path.join(od, "modified.mgt"), encoding=enc2, errors="replace").read()
         if "*SECTION" not in txt or "*ENDDATA" not in txt:
             fails.append(name + ": 수정 MGT 형식 깨짐")
+        # 원본 줄(한글 그룹명 등)이 그대로 남아야 함: 수정본에서 새 단면 줄·머리말·바뀐 요소 줄을 뺀 나머지 = 원본
+        orig = open(mgt_p, encoding=enc2, errors="replace").read().splitlines()
+        lost = len(set(orig) - set(txt.splitlines()))
+        if "�" in txt or lost > s2["changed"]:
+            fails.append(f"{name}: 수정 MGT 에서 원본 줄 {lost}개 변형(바뀐 요소 {s2['changed']}) / 깨진 글자 {txt.count(chr(0xfffd))}")
 print("\nRESULT:", "FAIL " + "; ".join(fails) if fails else f"PASS (OK {ref['ok']} NG {ref['ng']} 치수변경 {ref['dims_changed']})")
 sys.exit(1 if fails else 0)

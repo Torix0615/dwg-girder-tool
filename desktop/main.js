@@ -58,7 +58,7 @@ if (!gotLock) {
 }
 
 function fileArgs(argv) {
-  return argv.slice(1).filter((a) => !a.startsWith('-') && /\.(dwg|dxf)$/i.test(a) && fs.existsSync(a));
+  return argv.slice(1).filter((a) => !a.startsWith('-') && /\.(dwg|dxf|mgt)$/i.test(a) && fs.existsSync(a));
 }
 
 function send(channel, data) {
@@ -119,6 +119,7 @@ function buildTrayMenu() {
   return Menu.buildFromTemplate([
     { label: '열기', click: () => showWindow() },
     { label: '작업 시작…', click: () => startJob() },
+    { label: '4단계 구조 검토 (MGT)…', click: () => startStage4() },
     {
       label: '피드백 보내기…',
       click: () => {
@@ -159,6 +160,14 @@ function setPinned(on) {
 async function startJob() {
   showWindow();
   const r = await dialog.showOpenDialog(mainWindow, { title: '도면 선택 (1개)', filters: [{ name: 'DWG/DXF', extensions: ['dwg', 'dxf'] }], properties: ['openFile'] });
+  if (r.canceled || !r.filePaths.length) return null;
+  return engine.enqueue(r.filePaths.slice(0, 1));
+}
+
+/** 4단계 단독 시작: 수작업을 마친 MIDAS 모델(.mgt) 1개 선택 → 모델 읽기 작업(1·2·3단계 없이) */
+async function startStage4() {
+  showWindow();
+  const r = await dialog.showOpenDialog(mainWindow, { title: '4단계 구조 검토 — MIDAS GEN 모델(.mgt) 선택', filters: [{ name: 'MIDAS Gen MGT', extensions: ['mgt'] }], properties: ['openFile'] });
   if (r.canceled || !r.filePaths.length) return null;
   return engine.enqueue(r.filePaths.slice(0, 1));
 }
@@ -207,6 +216,7 @@ async function pickStage4(jobId) {
 
 function registerIpc() {
   ipcMain.handle('start-job', () => startJob());
+  ipcMain.handle('start-stage4', () => startStage4());
   ipcMain.handle('run', (_e, paths) => engine.enqueue((paths || []).slice(0, 1)));
   ipcMain.handle('cancel', () => engine.cancel());
   ipcMain.handle('remove-job', (_e, id) => engine.remove(id));

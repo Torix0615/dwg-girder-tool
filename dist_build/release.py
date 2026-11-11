@@ -15,7 +15,7 @@ PKG = os.path.join(HERE, "pkg"); APP = os.path.join(PKG, "app"); RT = os.path.jo
 OUT = os.path.join(HERE, "out"); TPL = os.path.join(HERE, "template")
 APP_FILES = ["cfg.py", "dxfio.py", "geom.py", "dump.py", "stage1_select.py", "stage2_model.py", "stage2_engine.py",
              "stage2_gen.py", "final_write.py", "render_html.py", "run_pipeline.py", "updater.py", "feedback.py", "xref_bind.py", "stage3_mgt.py",
-             "stage4_check.py", "stage4_xlsx.py", "stage4_apply.py"]
+             "stage4_check.py", "stage4_xlsx.py", "stage4_apply.py", "mgt_import.py"]  # mgt_import = 4단계 단독 실행의 모델 읽기(1.6.0)
 GH = shutil.which("gh") or r"C:\Program Files\GitHub CLI\gh.exe"
 
 

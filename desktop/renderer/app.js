@@ -83,7 +83,7 @@ function settingsVisibility() {
   $('#setBeamGrp').classList.toggle('hidden', stage < 2); // 1단계까지만이면 보 설정은 의미 없음
   $('#beamNums').classList.toggle('hidden', !$('#optBeams').checked); // 보를 끄면 간격 옵션 숨김
   $('#setMgtGrp').classList.toggle('hidden', stage < 3); // MGT 를 만들지 않으면 층고 설정 숨김
-  $('#setChkGrp').classList.toggle('hidden', stage < 3); // 4단계 검토는 MGT(3단계) 결과가 있어야 함
+  // 4단계 검토 설정은 항상 표시 — 1.6.0 부터 4단계는 도면 작업(1·2·3단계)과 무관하게 모델 MGT 로 단독 실행
 }
 function readSettings() {
   const vals = { 실행_단계: Number(document.querySelector('input[name=stage]:checked')?.value || 3), 보_생성: $('#optBeams').checked };
@@ -216,6 +216,9 @@ api.on('open-feedback', () => showGeneral(true));
 // ---- 작업 시작 / 드롭(1개)
 $('#btnStartEmpty').addEventListener('click', () => api.startJob());
 $('#btnStart').addEventListener('click', () => api.startJob());
+// 4단계 단독: 수작업을 마친 MIDAS 모델(.mgt) 선택 → 모델 읽기 → 카드에서 결과표 첨부(.mgt 를 끌어다 놓아도 같음)
+$('#btnS4Empty').addEventListener('click', () => api.startStage4());
+$('#btnS4').addEventListener('click', () => api.startStage4());
 ['dragenter', 'dragover', 'dragleave'].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault()));
 document.addEventListener('drop', async (e) => {
   e.preventDefault();
@@ -274,8 +277,9 @@ function renderList() {
   for (const j of [...state.jobs].reverse()) {
     const li = document.createElement('li');
     li.className = 'jobitem ' + j.state + (j.id === selected ? ' sel' : '');
-    const st = j.state === 'queued' ? '대기' : j.state === 'running' ? '진행 중' : j.state === 'done' ? (j.feedback && j.feedback.sent ? '완료 · 피드백 전송됨' : '완료') : j.state === 'failed' ? (j.failKind === 'input' ? '실패 · 도면 문제' : j.errorReport && j.errorReport.sent ? '실패 · 오류 보고됨' : '실패') : '취소';
-    const ol = optsLabel(j.opts);
+    const s4k = j.kind === 's4';
+    const st = j.state === 'queued' ? '대기' : j.state === 'running' ? (s4k ? '모델 읽는 중' : '진행 중') : j.state === 'done' ? (s4k ? s4State(j) : j.feedback && j.feedback.sent ? '완료 · 피드백 전송됨' : '완료') : j.state === 'failed' ? (j.failKind === 'input' ? (s4k ? '실패 · 모델 파일 문제' : '실패 · 도면 문제') : j.errorReport && j.errorReport.sent ? '실패 · 오류 보고됨' : '실패') : '취소';
+    const ol = s4k ? '4단계' : optsLabel(j.opts);
     li.innerHTML = `<div class="ji-name" title="${esc(j.src)}">${esc(j.name)}</div><div class="ji-state">${esc(st)}${ol ? `<span class="ji-opts">${esc(ol)}</span>` : ''}</div>`;
     if (j.state !== 'running') {
       const x = document.createElement('button');
@@ -296,6 +300,31 @@ function renderList() {
   }
 }
 
+/** 4단계 단독 작업의 목록 표시 */
+function s4State(j) {
+  const s = j.stage4;
+  if (!s) return '결과표 첨부 대기';
+  if (s.state === 'running') return '검토 중';
+  if (s.state === 'failed') return s.failKind === 'input' ? '검토 실패 · 입력 문제' : '검토 실패';
+  if (s.state === 'done' && s.summary) return `검토 완료 · OK ${s.summary.ok} / NG ${s.summary.ng}`;
+  return '결과표 첨부 대기';
+}
+const num = (n) => Number(n || 0).toLocaleString('ko-KR');
+/** 4단계 단독 작업 카드 머리: 읽은 모델 요약(검토 대상·종류별 수·검토 제외 사유) */
+function renderModel(j) {
+  const m = j.model;
+  if (!m) return '';
+  const sk = Object.entries(m.skipped || {});
+  const exc = sk.filter(([k]) => !/^[A-Z?]+$/.test(k)); // 더미·WG·비직사각형 등(=검토 제외). WALL·PLATE 같은 요소 종류는 애초에 대상이 아님
+  const other = sk.filter(([k]) => /^[A-Z?]+$/.test(k));
+  const excN = exc.reduce((a, [, v]) => a + v, 0);
+  const secs = Object.entries(m.skipped_secs || {}).map(([k, v]) => `${k} ${num(v)}`).join(', ');
+  const fck = (m.fck || []).length ? `콘크리트 ${m.fck.map((f) => `C${f}`).join('·')} (모델 재료 등급)` : '콘크리트 강도는 설정값 사용';
+  return `<div class="chips"><span class="chip2">검토 대상 ${num(m.elements)}</span><span class="chip2">기둥 ${num(m.col)}</span><span class="chip2">거더 ${num(m.girder)}</span><span class="chip2">보 ${num(m.beam)}</span>${excN ? `<span class="chip2 warn" title="더미·벽 위 가상 보(WG)·직사각형 RC 가 아닌 단면">검토 제외 ${num(excN)}</span>` : ''}</div>
+    <p class="hint">단위 ${esc(m.unit || '-')} · 단면 ${num(m.sections)}종 · 층 ${num(m.stories)}개 · ${esc(fck)}${(m.fck_unknown || []).length ? ` · 등급 미상 재료(${esc(m.fck_unknown.join(', '))})는 설정값` : ''}</p>
+    ${exc.length ? `<p class="hint">검토 제외 — ${esc(exc.map(([k, v]) => `${k} ${num(v)}개`).join(' · '))}${secs ? ` (단면: ${esc(secs)})` : ''}${other.length ? ` · 그 밖에 기둥·보가 아닌 요소 ${esc(other.map(([k, v]) => `${k} ${num(v)}`).join(', '))}` : ''}</p>` : other.length ? `<p class="hint">기둥·보가 아닌 요소 ${esc(other.map(([k, v]) => `${k} ${num(v)}`).join(', '))} 는 대상이 아닙니다.</p>` : ''}`;
+}
+
 function renderDetail(j) {
   const el = $('#detail');
   if (!j) {
@@ -312,6 +341,7 @@ function renderDetail(j) {
     j.state === 'queued' ? '대기 중' : j.state === 'running' ? `${j.step} · ${fmtSec(Date.now() - j.started)}` : j.state === 'done' ? `${j.message} · ${fmtDate(new Date(j.ended).toISOString())}` : j.message;
   const sent = j.feedback && j.feedback.sent;
   const prog = progress[j.id];
+  const s4k = j.kind === 's4'; // 4단계 단독 작업(모델 MGT)
   el.innerHTML = `
     <h2 class="d-name" title="${esc(j.src)}">${esc(j.name)}</h2>
     <div class="d-status ${j.state}">${esc(status)}${optsLabel(j.opts) ? `<span class="d-opts" title="이 작업에 적용된 설정">${esc(optsLabel(j.opts))}</span>` : ''}</div>
@@ -319,24 +349,25 @@ function renderDetail(j) {
     ${
       j.state === 'failed'
         ? `<div class="fail ${j.failKind === 'input' ? 'input' : 'error'}">
-            <b>${j.failKind === 'input' ? '도면 문제' : '프로그램 오류'}</b> ${esc(j.failReason || '')}
-            <div class="hint">${j.failKind === 'input' ? '안내대로 파일을 갖춘 뒤 다시 작업 시작하면 됩니다.' : esc(j.errorReport ? j.errorReport.message : '오류 보고를 자동으로 보냅니다')}</div>
+            <b>${j.failKind === 'input' ? (s4k ? '모델 파일 문제' : '도면 문제') : '프로그램 오류'}</b> ${esc(j.failReason || '')}
+            <div class="hint">${j.failKind === 'input' ? (s4k ? 'MIDAS 에서 모델을 MGT 로 다시 저장한 뒤 "4단계 구조 검토 (MGT)" 로 선택해 주세요.' : '안내대로 파일을 갖춘 뒤 다시 작업 시작하면 됩니다.') : esc(j.errorReport ? j.errorReport.message : '오류 보고를 자동으로 보냅니다')}</div>
           </div><pre class="d-tail">${esc((j.tail || []).slice(-8).join('\n'))}</pre>`
         : ''
     }
-    ${j.state === 'done' ? `<div class="row gap"><button class="btn" data-act="download">⬇ 결과 DXF</button>${j.mgt ? `<button class="btn" data-act="download-mgt">⬇ MIDAS GEN (MGT)</button>` : ''}<span class="hint">${esc(j.result ? j.result.split(/[\\/]/).pop() : '')}</span></div>` : ''}
-    ${j.state === 'done' && j.mgt ? renderStage4(j) : ''}
+    ${j.state === 'done' && s4k ? renderModel(j) : ''}
+    ${j.state === 'done' && !s4k ? `<div class="row gap"><button class="btn" data-act="download">⬇ 결과 DXF</button>${j.mgt ? `<button class="btn" data-act="download-mgt">⬇ MIDAS GEN (MGT)</button>` : ''}<span class="hint">${esc(j.result ? j.result.split(/[\\/]/).pop() : '')}</span></div>` : ''}
+    ${j.state === 'done' && (s4k || j.mgt) ? renderStage4(j) : ''}
     ${
       j.state === 'done' || j.state === 'failed'
         ? `<section class="fb">
         <h3>피드백</h3>
-        <p class="hint">결과에서 잘못된 점·빠진 것·바라는 점을 적어 주세요. 원본 도면과 결과 DXF가 함께 전송되어 생성 규칙 개선에 쓰입니다.</p>
+        <p class="hint">${s4k ? '검토 결과에서 잘못된 점·빠진 것·바라는 점을 적어 주세요. 모델 MGT·결과표·검토 엑셀이 함께 전송되어 검토 규칙 개선에 쓰입니다.' : '결과에서 잘못된 점·빠진 것·바라는 점을 적어 주세요. 원본 도면과 결과 DXF가 함께 전송되어 생성 규칙 개선에 쓰입니다.'}</p>
         <div class="radios">
-          <label><input type="radio" name="scope" value="all" ${d.scope === 'all' ? 'checked' : ''} ${sent ? 'disabled' : ''}/> 모든 도면에 공통</label>
-          <label><input type="radio" name="scope" value="file" ${d.scope === 'file' ? 'checked' : ''} ${sent ? 'disabled' : ''}/> 이 도면에만 해당</label>
+          <label><input type="radio" name="scope" value="all" ${d.scope === 'all' ? 'checked' : ''} ${sent ? 'disabled' : ''}/> ${s4k ? '모든 모델에 공통' : '모든 도면에 공통'}</label>
+          <label><input type="radio" name="scope" value="file" ${d.scope === 'file' ? 'checked' : ''} ${sent ? 'disabled' : ''}/> ${s4k ? '이 모델에만 해당' : '이 도면에만 해당'}</label>
           <label><input type="radio" name="scope" value="unknown" ${d.scope === 'unknown' ? 'checked' : ''} ${sent ? 'disabled' : ''}/> 모름</label>
         </div>
-        <textarea rows="6" ${sent ? 'disabled' : ''} placeholder="예) 램프 구간의 곡선 보가 생성되지 않음. 기둥 없는 구역은 벽을 따라 거더가 있어야 함.">${esc(sent ? j.feedback.text : d.text)}</textarea>
+        <textarea rows="6" ${sent ? 'disabled' : ''} placeholder="${s4k ? '예) 단면 RB1 이 거더로 분류됨. WG 단면도 검토 대상에 넣어야 함. 기둥 주근 시작값이 실제와 다름.' : '예) 램프 구간의 곡선 보가 생성되지 않음. 기둥 없는 구역은 벽을 따라 거더가 있어야 함.'}">${esc(sent ? j.feedback.text : d.text)}</textarea>
         <p class="hint fb-auto"></p>
         <div class="row gap">
           <button class="btn" data-act="send" ${sent || sending[j.id] ? 'disabled' : ''}>${sent ? '전송 완료' : sending[j.id] ? '전송 중…' : '전송하기'}</button>
@@ -356,6 +387,7 @@ function renderDetail(j) {
       m.className = 's4-msg msg ' + cls;
     }
   };
+  el.querySelector('[data-act=s4-start]')?.addEventListener('click', () => api.startStage4());
   el.querySelector('[data-act=s4-pick]')?.addEventListener('click', async (e) => {
     e.target.disabled = true;
     const r = await api.stage4Pick(j.id);
@@ -422,21 +454,28 @@ function renderDetail(j) {
   });
 }
 
-// ---- 4단계 구조 검토 카드(3단계 MGT 가 있는 완료 작업): MIDAS 해석 결과표 첨부 → 검토 → 엑셀, 승인 → 수정 MGT
+// ---- 4단계 구조 검토 카드: 4단계 단독 작업(kind 's4', 모델 MGT)에서 MIDAS 해석 결과표 첨부 → 검토 → 엑셀, 승인 → 수정 MGT.
+//      도면 작업(1·2·3단계) 카드에서는 실행하지 않고 안내 + 시작 버튼만 둔다(수작업 후에는 요소 번호가 달라지므로). 1.5.x 에서 검토한 결과는 그대로 보여 줌.
 const KIND_KO = { col: '기둥', girder: '거더', beam: '보' };
 function renderStage4(j) {
   const s = j.stage4;
-  const canRun = !s || s.state !== 'running';
+  const s4k = j.kind === 's4';
+  const canRun = s4k && (!s || s.state !== 'running');
   const pickLabel = s && s.state === 'done' ? '📎 다른 결과표로 다시 검토' : '📎 MIDAS 해석 결과표(텍스트) 첨부 → 검토 실행';
+  const guide = `<p class="hint">3단계 MGT 를 MIDAS GEN 에서 <b>수정·하중 입력·해석</b>한 뒤, 수정한 모델을 MGT 로 저장(File → Export → MIDAS Gen MGT File)해 아래 버튼으로 4단계를 시작합니다. 수작업 후에는 요소 번호가 달라지므로 4단계는 <b>수정한 모델 MGT 와 그 해석 결과표</b>로 검토합니다.</p>
+    <div class="row gap"><button class="btn" data-act="s4-start">4단계 구조 검토 (MGT) 시작</button><span class="s4-msg msg"></span></div>`;
   let body = '';
-  if (!j.elements) {
-    body = `<p class="hint">이 작업은 요소 대응표가 없어(1.5.0 이전 생성) 검토할 수 없습니다. 도면을 다시 작업한 뒤 이용해 주세요.</p>`;
+  if (!s4k && !(s && s.state === 'done' && s.summary)) {
+    return `<section class="s4"><h3>4단계 구조 검토 <span class="chip">수작업 후 모델 MGT 로 별도 실행</span></h3>${guide}</section>`;
+  }
+  if (s4k && !j.elements) {
+    body = `<p class="hint">모델 요소표가 없어 검토할 수 없습니다. "4단계 구조 검토 (MGT)" 로 모델을 다시 선택해 주세요.</p>`;
   } else if (s && s.state === 'running') {
     const pct = Math.min(95, Math.round(((s.stepIdx || 0) / (s.total || 4)) * 100));
     body = `<div class="d-status running">${esc(s.step || '검토 중')} · ${fmtSec(Date.now() - s.started)}</div><div class="bar"><i style="width:${pct}%"></i></div><pre class="d-tail">${esc((s.tail || []).slice(-4).join('\n'))}</pre>`;
   } else if (s && s.state === 'failed') {
     body = `<div class="fail ${s.failKind === 'input' ? 'input' : 'error'}"><b>${s.failKind === 'input' ? '설정·입력 문제' : '검토 실패'}</b> ${esc(s.failReason || '')}
-      <div class="hint">${s.failKind === 'input' ? '설정(⚙)을 고친 뒤 다시 검토해 주세요.' : esc(s.errorReport ? s.errorReport.message : '결과표를 포함한 오류 보고를 자동으로 보냅니다. 형식을 맞춘 업데이트가 나오면 자동 설치됩니다.')}</div></div>`;
+      <div class="hint">${s.failKind === 'input' ? '안내대로 설정(⚙) 또는 첨부 파일을 고친 뒤 다시 검토해 주세요.' : esc(s.errorReport ? s.errorReport.message : '결과표를 포함한 오류 보고를 자동으로 보냅니다. 형식을 맞춘 업데이트가 나오면 자동 설치됩니다.')}</div></div>`;
   } else if (s && s.state === 'done' && s.summary) {
     const m = s.summary;
     const kinds = Object.entries(m.by_kind || {}).map(([k, v]) => `${KIND_KO[k] || k} OK ${v.ok}·NG ${v.ng}${v.dims ? `(치수 ${v.dims})` : ''}`).join(' / ');
@@ -446,7 +485,11 @@ function renderStage4(j) {
       ${m.ng && m.dims_changed ? (s.mgt2 ? `<button class="btn" data-act="s4-mgt2">⬇ 수정 MGT (승인됨)</button><button class="btn ghost small" data-act="s4-apply">다시 생성</button>` : `<button class="btn" data-act="s4-apply">✔ 승인 → 수정 MGT 생성</button>`) : ''}</div>
       <p class="hint">${m.ng === 0 ? '모든 부재 OK — MGT 수정이 필요 없습니다.' : m.dims_changed ? '승인하면 치수가 바뀐 부재만 새 단면(C2·G2·B2…)으로 바꾼 MGT 를 만듭니다. 철근은 MGT 에 쓰지 않으며 엑셀의 추천 철근을 참고하십시오.' : 'NG 부재는 철근 보강만으로 해결됩니다(엑셀 추천 철근 참조) — 단면 치수 변경이 없어 MGT 수정은 필요 없습니다.'}${s.applied ? ` 수정 MGT: 요소 ${s.applied.changed}개 단면 교체, 새 단면 ${(s.applied.new_sections || []).map((x) => `${x.name} ${x.H}×${x.B}`).join(', ')}` : ''}</p>`;
   } else {
-    body = `<p class="hint">3단계 MGT 를 MIDAS GEN 에서 열어 <b>하중·하중조합을 정의하고 해석</b>한 뒤, 결과 테이블(Beam Force) 을 텍스트(.txt/.csv)로 저장해 첨부하면 기둥(축력·PM 상관도·장주)·거더·보(휨·전단)를 KDS 14 20 으로 검토하고 NG 부재는 철근 → 폭 → 춤 순으로 추천합니다. 검토 기준값은 ⚙ 설정.</p>`;
+    body = `<p class="hint">이 모델을 MIDAS GEN 에서 <b>해석</b>한 뒤 Results → Result Tables → Beam → Force 표를 텍스트(.txt) 또는 CSV 로 내보내 첨부하면 기둥(축력·PM 상관도·장주)·거더·보(휨·전단)를 KDS 14 20 으로 검토하고 NG 부재는 철근 → 폭 → 춤 순으로 추천합니다. 결과표는 <b>이 모델과 같은 요소 번호</b>여야 하므로, 모델을 고쳤다면 모델도 다시 선택해 주세요. 검토 기준값은 ⚙ 설정.</p>`;
+  }
+  if (!s4k) {
+    // 1.5.x 에서 도면 작업 카드로 검토한 결과: 내려받기만 유지하고 새 검토는 단독 작업으로 안내
+    return `<section class="s4"><h3>4단계 구조 검토 <span class="chip">이전 검토 결과</span></h3>${body}<span class="s4-msg msg"></span>${guide}</section>`;
   }
   return `<section class="s4"><h3>4단계 구조 검토 <span class="chip">MIDAS 해석 결과 → KDS 14 20</span></h3>${body}
     ${j.elements && canRun ? `<div class="row gap"><button class="btn ${s && s.state === 'done' ? 'ghost small' : ''}" data-act="s4-pick">${pickLabel}</button><span class="s4-msg msg"></span></div>` : '<span class="s4-msg msg"></span>'}</section>`;
