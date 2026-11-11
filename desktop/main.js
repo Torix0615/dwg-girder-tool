@@ -206,8 +206,8 @@ async function reportError(j, which = 'job') {
 /** 4단계: MIDAS 해석 결과표(텍스트) 선택 → 검토 실행 */
 async function pickStage4(jobId) {
   const r = await dialog.showOpenDialog(mainWindow, {
-    title: 'MIDAS GEN 해석 결과표(Beam Force 텍스트) 선택',
-    filters: [{ name: '결과표 텍스트', extensions: ['txt', 'csv', 'tsv', 'dat', 'out', 'prn'] }, { name: '모든 파일', extensions: ['*'] }],
+    title: 'MIDAS GEN 해석 결과표(Beam Force 텍스트·엑셀) 선택',
+    filters: [{ name: '결과표 (텍스트·엑셀)', extensions: ['txt', 'csv', 'tsv', 'dat', 'out', 'prn', 'xlsx'] }, { name: '모든 파일', extensions: ['*'] }],
     properties: ['openFile'],
   });
   if (r.canceled || !r.filePaths.length) return { ok: false, message: '' };

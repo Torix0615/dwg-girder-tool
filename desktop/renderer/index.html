@@ -81,7 +81,7 @@
     </div>
     <div class="setgrp" id="setChkGrp">
       <h4>4단계 구조 검토 — MIDAS GEN 해석 결과로 기둥·거더·보 검토 (KDS 14 20 강도설계법)</h4>
-      <p class="hint"><b>4단계 구조 검토 (MGT)</b> 로 수작업을 마친 MIDAS 모델(.mgt)을 선택하고, 그 모델을 <b>해석</b>한 결과 테이블(Beam Force)을 텍스트(.txt/.csv)로 저장해 카드에 첨부하면 검토합니다(1·2·3단계 작업 없이 단독 실행). 콘크리트 강도는 모델의 재료 등급(C27·C30·C35 등)을 우선 쓰고, 등급이 없을 때만 아래 fck 값을 씁니다. 아래 값은 검토 시작값이며, NG 부재는 <b>철근 → 폭 → 춤</b> 순으로 추천합니다. 철근은 <b>개수-직경</b>(예 4-D22), 띠철근·스터럽은 <b>직경@간격</b>(예 D10@200)으로 적습니다.</p>
+      <p class="hint"><b>4단계 구조 검토 (MGT)</b> 로 수작업을 마친 MIDAS 모델(.mgt)을 선택하고, 그 모델을 <b>해석</b>한 결과 테이블(Beam Force)을 텍스트(.txt·.csv) 또는 엑셀(.xlsx)로 저장한 뒤, 왼쪽 목록에서 그 모델을 누르면 오른쪽에 나오는 <b>MIDAS 해석 결과표(텍스트·엑셀) 첨부 → 검토 실행</b> 버튼으로 첨부하면 검토합니다(1·2·3단계 작업 없이 단독 실행). 콘크리트 강도는 모델의 재료 등급(C27·C30·C35 등)을 우선 쓰고, 등급이 없을 때만 아래 fck 값을 씁니다. 아래 값은 검토 시작값이며, NG 부재는 <b>철근 → 폭 → 춤</b> 순으로 추천합니다. 철근은 <b>개수-직경</b>(예 4-D22), 띠철근·스터럽은 <b>직경@간격</b>(예 D10@200)으로 적습니다.</p>
       <div class="nums">
         <label><span>콘크리트 fck — 기둥</span><input type="number" data-key="검토_fck_기둥" min="18" max="100" step="1" inputmode="numeric" /><em>MPa</em><i class="dflt"></i></label>
         <label><span>콘크리트 fck — 거더·보</span><input type="number" data-key="검토_fck_보" min="18" max="100" step="1" inputmode="numeric" /><em>MPa</em><i class="dflt"></i></label>
@@ -128,7 +128,7 @@
   <!-- 피드백 패널: 도면 작업 없이 보내는 피드백(프로그램 화면·기능 요청 / 생성 규칙 의견) -->
   <section id="general" class="info hidden">
     <h3>피드백 보내기</h3>
-    <p class="hint">도면 작업과 상관없이 보낼 수 있습니다. 버튼 위치·화면 배치·기능 추가 같은 <b>프로그램</b> 의견과, 거더·보 생성 <b>규칙</b> 의견 모두 받습니다. 도면 파일은 첨부되지 않습니다(특정 결과에 대한 의견은 작업 카드의 피드백으로).</p>
+    <p class="hint">도면 작업과 상관없이 보낼 수 있습니다. 버튼 위치·화면 배치·기능 추가 같은 <b>프로그램</b> 의견과, 거더·보 생성 <b>규칙</b> 의견 모두 받습니다. 도면 파일은 첨부되지 않습니다(특정 결과에 대한 의견은 왼쪽 목록에서 그 작업을 누르면 오른쪽 화면 아래에 나오는 "피드백" 칸으로).</p>
     <div class="radios" id="gfKind">
       <label><input type="radio" name="gkind" value="ui" checked /> 프로그램 화면·기능 (버튼 위치·레이아웃·기능 추가·수정)</label>
       <label><input type="radio" name="gkind" value="rule" /> 생성 규칙·결과 (모든 도면 공통)</label>

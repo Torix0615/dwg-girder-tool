@@ -461,7 +461,7 @@ function renderStage4(j) {
   const s = j.stage4;
   const s4k = j.kind === 's4';
   const canRun = s4k && (!s || s.state !== 'running');
-  const pickLabel = s && s.state === 'done' ? '📎 다른 결과표로 다시 검토' : '📎 MIDAS 해석 결과표(텍스트) 첨부 → 검토 실행';
+  const pickLabel = s && s.state === 'done' ? '📎 다른 결과표로 다시 검토' : '📎 MIDAS 해석 결과표(텍스트·엑셀) 첨부 → 검토 실행';
   const guide = `<p class="hint">3단계 MGT 를 MIDAS GEN 에서 <b>수정·하중 입력·해석</b>한 뒤, 수정한 모델을 MGT 로 저장(File → Export → MIDAS Gen MGT File)해 아래 버튼으로 4단계를 시작합니다. 수작업 후에는 요소 번호가 달라지므로 4단계는 <b>수정한 모델 MGT 와 그 해석 결과표</b>로 검토합니다.</p>
     <div class="row gap"><button class="btn" data-act="s4-start">4단계 구조 검토 (MGT) 시작</button><span class="s4-msg msg"></span></div>`;
   let body = '';
@@ -485,7 +485,7 @@ function renderStage4(j) {
       ${m.ng && m.dims_changed ? (s.mgt2 ? `<button class="btn" data-act="s4-mgt2">⬇ 수정 MGT (승인됨)</button><button class="btn ghost small" data-act="s4-apply">다시 생성</button>` : `<button class="btn" data-act="s4-apply">✔ 승인 → 수정 MGT 생성</button>`) : ''}</div>
       <p class="hint">${m.ng === 0 ? '모든 부재 OK — MGT 수정이 필요 없습니다.' : m.dims_changed ? '승인하면 치수가 바뀐 부재만 새 단면(C2·G2·B2…)으로 바꾼 MGT 를 만듭니다. 철근은 MGT 에 쓰지 않으며 엑셀의 추천 철근을 참고하십시오.' : 'NG 부재는 철근 보강만으로 해결됩니다(엑셀 추천 철근 참조) — 단면 치수 변경이 없어 MGT 수정은 필요 없습니다.'}${s.applied ? ` 수정 MGT: 요소 ${s.applied.changed}개 단면 교체, 새 단면 ${(s.applied.new_sections || []).map((x) => `${x.name} ${x.H}×${x.B}`).join(', ')}` : ''}</p>`;
   } else {
-    body = `<p class="hint">이 모델을 MIDAS GEN 에서 <b>해석</b>한 뒤 Results → Result Tables → Beam → Force 표를 텍스트(.txt) 또는 CSV 로 내보내 첨부하면 기둥(축력·PM 상관도·장주)·거더·보(휨·전단)를 KDS 14 20 으로 검토하고 NG 부재는 철근 → 폭 → 춤 순으로 추천합니다. 결과표는 <b>이 모델과 같은 요소 번호</b>여야 하므로, 모델을 고쳤다면 모델도 다시 선택해 주세요. 검토 기준값은 ⚙ 설정.</p>`;
+    body = `<p class="hint">이 모델을 MIDAS GEN 에서 <b>해석</b>한 뒤 Results → Result Tables → Beam → Force 표를 텍스트(.txt)·CSV·엑셀(.xlsx) 중 하나로 내보내 아래 버튼으로 첨부하면 기둥(축력·PM 상관도·장주)·거더·보(휨·전단)를 KDS 14 20 으로 검토하고 NG 부재는 철근 → 폭 → 춤 순으로 추천합니다. 결과표는 <b>이 모델과 같은 요소 번호</b>여야 하므로, 모델을 고쳤다면 모델도 다시 선택해 주세요. 검토 기준값은 ⚙ 설정.</p>`;
   }
   if (!s4k) {
     // 1.5.x 에서 도면 작업 카드로 검토한 결과: 내려받기만 유지하고 새 검토는 단독 작업으로 안내

@@ -1,7 +1,7 @@
 """4단계: MIDAS Gen 해석 결과표(Beam Force 텍스트)로 기둥·거더·보 단면을 KDS 14 20 강도설계법으로 검토하고 NG 부재는 철근→폭→춤 순으로 추천(피드백 1d7f01, 전문가 답변 11-09).
-python stage4_check.py <요소대응표 _MIDAS_elements.json> <MIDAS 결과표 .txt|.csv> <출력폴더> [--config config.json]
+python stage4_check.py <요소대응표 _MIDAS_elements.json> <MIDAS 결과표 .txt|.csv|.xlsx> <출력폴더> [--config config.json]
 출력: <출력폴더>/check.json(요소별 검토·추천, stage4_apply 입력) + check.xlsx(검토결과·요약·하중 시트). 표준 출력 마지막 줄 SUMMARY=<json>.
-입력 결과표: MIDAS Gen 결과 테이블(Beam Force) 을 텍스트/CSV 로 내보낸 파일. 열 = Elem, Load, Part, Axial, Shear-y, Shear-z, Torsion, Moment-y, Moment-z (한글 머리글도 인식).
+입력 결과표: MIDAS Gen 결과 테이블(Beam Force) 을 텍스트/CSV 또는 엑셀(.xlsx, 머리글이 있는 첫 시트)로 내보낸 파일. 구형 .xls 는 입력 오류로 안내. 열 = Elem, Load, Part, Axial, Shear-y, Shear-z, Torsion, Moment-y, Moment-z (한글 머리글도 인식).
   단위는 머리글 괄호(kN, kN*m, kN*mm, N, tonf…)에서 읽고(설정 검토_결과_단위=auto), 없으면 MGT 와 같은 kN·mm 로 본다.
   Load 열이 개별 하중케이스(D/L 계열 이름)뿐이면 설정 검토_하중조합(기본 1.4D; 1.2D+1.6L)으로 조합을 만들고, 조합 이름이 있으면 그대로 쓴다.
 검토 규칙(요약):
@@ -129,8 +129,16 @@ def norm(h):
     return re.sub(r"\s+", " ", str(h).strip().lower().replace("(", " (").replace("*", "·").replace("ㆍ", "·"))
 
 
+def clean_cell(c):
+    """칸 안의 줄바꿈·탭을 없앤다: MIDAS 표를 엑셀·CSV 로 저장하면 머리글이 'Axial⏎(kN)', 'Moment-⏎y⏎(kN·m)' 처럼 칸 안에서 줄이 바뀐다"""
+    c = re.sub(r"-\s*[\r\n]+\s*", "-", str(c))
+    return re.sub(r"\s*[\r\n\t]+\s*", " ", c).strip()
+
+
 def match_col(h):
     base = re.sub(r"\(.*?\)|\[.*?\]", "", norm(h)).strip()
+    if re.search(r"\border\b|순서", base):
+        return None  # Step Order·Part Order·Load Order·Compo Order 는 Part·Load 열이 아님
     for key, al in ALIAS.items():
         for a in al:
             if base == a or base.startswith(a) or base.replace("-", "").replace(" ", "") == a.replace("-", "").replace(" ", ""):
@@ -174,30 +182,132 @@ def to_float(s):
         return None
 
 
-def parse_result(path):
-    raw = open(path, "rb").read()
-    for enc in ("utf-8-sig", "cp949", "utf-16", "latin-1"):
-        try:
-            text = raw.decode(enc); break
-        except UnicodeDecodeError:
-            continue
-    lines = [l.rstrip("\r\n") for l in text.splitlines()]
-    head = "\n".join(lines[:40]).upper()
-    if "MIDAS GEN TEXT(MGT)" in head or ("*VERSION" in head and "*UNIT" in head):
-        raise SystemExit("입력 오류: 첨부한 파일은 MIDAS 모델(MGT) 입니다 — 4단계에는 MIDAS 에서 해석한 결과표(Beam Force: Elem, Load, Part, Axial, Shear, Moment 열)를 텍스트/CSV 로 내보낸 파일을 첨부해야 합니다")
-    hdr_i = hdr = delim = None
+def xlsx_sheets(path):
+    """엑셀(.xlsx = zip + xml)을 표준 라이브러리로 읽어 시트별 줄 목록(셀을 탭으로 이은 문자열)을 돌려준다 — 배포 런타임에 openpyxl 없음.
+    공유 문자열(t="s")·인라인 문자열·숫자 셀을 읽고, 셀 주소(A1, AB12)로 열 위치를 맞춰 빈 셀을 건너뛴 행도 열이 밀리지 않게 한다."""
+    import zipfile
+    import xml.etree.ElementTree as ET
+    NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    try:
+        z = zipfile.ZipFile(path)
+    except zipfile.BadZipFile:
+        raise SystemExit("입력 오류: 엑셀 파일을 열 수 없습니다(손상되었거나 암호가 걸린 파일) — 엑셀에서 다시 저장해 첨부해 주세요")
+    names = z.namelist()
+    sheets = sorted((n for n in names if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", n)), key=lambda n: int(re.search(r"(\d+)\.xml$", n).group(1)))
+    if not sheets:
+        raise SystemExit("입력 오류: 엑셀 통합 문서(.xlsx)가 아닙니다 — 결과표를 텍스트(.txt)·CSV·엑셀(.xlsx) 중 하나로 저장해 첨부해 주세요")
+    shared = []
+    if "xl/sharedStrings.xml" in names:
+        for _ev, el in ET.iterparse(z.open("xl/sharedStrings.xml")):
+            if el.tag == NS + "si":
+                shared.append("".join([t.text or "" for t in el.findall(NS + "t")] + [t.text or "" for r in el.findall(NS + "r") for t in r.findall(NS + "t")]))
+                el.clear()
+
+    def col_idx(ref):
+        n = 0
+        for ch in ref:
+            if not ch.isalpha():
+                break
+            n = n * 26 + (ord(ch.upper()) - 64)
+        return n - 1
+
+    out = []
+    for sn in sheets:
+        lines = []
+        for _ev, el in ET.iterparse(z.open(sn)):
+            if el.tag != NS + "row":
+                continue
+            cells = []
+            for c in el.findall(NS + "c"):
+                i = col_idx(c.get("r")) if c.get("r") else len(cells)
+                t = c.get("t"); v = c.find(NS + "v")
+                if t == "s":
+                    val = shared[int(v.text)] if v is not None and v.text and int(v.text) < len(shared) else ""
+                elif t == "inlineStr":
+                    val = "".join(x.text or "" for x in c.iter(NS + "t"))
+                else:
+                    val = v.text if v is not None and v.text else ""
+                while len(cells) < i:
+                    cells.append("")
+                cells.append(clean_cell(val))
+            lines.append("\t".join(cells).rstrip("\t"))
+            el.clear()
+        out.append(lines)
+    return out
+
+
+def find_header(lines, delims=("\t", ",", None)):
     for i, l in enumerate(lines):
-        for d in ("\t", ",", None):
+        for d in delims:
             cols = split_line(l, d)
             keys = [match_col(c) for c in cols]
             if "elem" in keys and ("n" in keys or "my" in keys or "mz" in keys) and len([k for k in keys if k]) >= 4:
-                hdr_i, hdr, delim = i, cols, d; break
-        if hdr is not None:
-            break
-    if hdr is None:
-        raise SystemExit("결과표 머리글을 찾지 못함 — MIDAS 결과 테이블(Beam Force: Elem, Load, Part, Axial, Shear, Moment 열)을 텍스트/CSV 로 내보낸 파일이어야 함")
+                return i, cols, d
+    return None, None, None
+
+
+def n_keys(hdr):
+    return len({match_col(c) for c in hdr} - {None}) if hdr else 0
+
+
+def pick_columns(hdr):
+    """머리글 → {항목: 열 번호}. 같은 항목으로 읽히는 열이 여럿이면 이름이 정확히 같은 열을 먼저 쓴다."""
     keys = [match_col(c) for c in hdr]
-    idx = {k: keys.index(k) for k in ALIAS if k in keys}
+
+    def exact(c, key):
+        base = re.sub(r"\(.*?\)|\[.*?\]", "", norm(c)).replace("-", "").replace(" ", "")
+        return any(base == a.replace("-", "").replace(" ", "") for a in ALIAS[key])
+
+    idx = {}
+    for k in ALIAS:
+        cand = [j for j, kk in enumerate(keys) if kk == k]
+        if cand:
+            idx[k] = next((j for j in cand if exact(hdr[j], k)), cand[0])
+    return idx
+
+
+def parse_result(path):
+    raw = open(path, "rb").read()
+    if raw[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        raise SystemExit("입력 오류: 구형 엑셀(.xls) 파일은 읽지 못합니다 — 엑셀에서 '다른 이름으로 저장 → Excel 통합 문서(.xlsx)' 로 저장하거나 텍스트(.txt)·CSV 로 내보내 첨부해 주세요")
+    if raw[:4] == b"PK\x03\x04":  # 엑셀(.xlsx): 머리글이 있는 첫 시트를 쓴다
+        hdr_i = hdr = delim = None
+        lines = []
+        for sheet_lines in xlsx_sheets(path):
+            hdr_i, hdr, delim = find_header(sheet_lines)
+            if hdr is not None:
+                lines = sheet_lines; break
+        if hdr is None:
+            raise SystemExit("결과표 머리글을 찾지 못함 — 엑셀 파일의 어느 시트에도 MIDAS 결과 테이블(Beam Force: Elem, Load, Part, Axial, Shear, Moment 열)이 없음")
+    else:
+        for enc in ("utf-8-sig", "cp949", "utf-16", "latin-1"):
+            try:
+                text = raw.decode(enc); break
+            except UnicodeDecodeError:
+                continue
+        lines = [l.rstrip("\r\n") for l in text.splitlines()]
+        head = "\n".join(lines[:40]).upper()
+        if "MIDAS GEN TEXT(MGT)" in head or ("*VERSION" in head and "*UNIT" in head):
+            raise SystemExit("입력 오류: 첨부한 파일은 MIDAS 모델(MGT) 입니다 — 4단계에는 MIDAS 에서 해석한 결과표(Beam Force: Elem, Load, Part, Axial, Shear, Moment 열)를 텍스트(.txt)·CSV·엑셀(.xlsx)로 내보낸 파일을 첨부해야 합니다")
+        hdr_i, hdr, delim = find_header(lines)
+        # CSV 는 따옴표 안에 줄바꿈이 든 칸(머리글 "Axial⏎(kN)")이 있을 수 있다. 줄 단위로만 읽으면 머리글이 첫 줄에서 잘려 Axial 뒤 열을 못 찾고
+        # 부재력이 전부 0 으로 들어간다(1.6.0 까지의 증상: 전 부재 OK·공란). 파일 전체를 CSV 로 읽은 줄 목록도 만들어 머리글에서 더 많은 열을 찾는 쪽을 쓴다.
+        if "," in text:
+            try:
+                csv_lines = ["\t".join(clean_cell(c) for c in row).rstrip("\t") for row in csv.reader(io.StringIO(text, newline=""))]
+            except csv.Error:
+                csv_lines = []
+            ci, chdr, cd = find_header(csv_lines, ("\t",))
+            if chdr is not None and n_keys(chdr) > n_keys(hdr):
+                lines, hdr_i, hdr, delim = csv_lines, ci, chdr, cd
+        if hdr is None:
+            raise SystemExit("결과표 머리글을 찾지 못함 — MIDAS 결과 테이블(Beam Force: Elem, Load, Part, Axial, Shear, Moment 열)을 텍스트(.txt)·CSV·엑셀(.xlsx)로 내보낸 파일이어야 함")
+    hdr = [clean_cell(c) for c in hdr]
+    idx = pick_columns(hdr)
+    # 부재력 열을 하나라도 못 찾으면 0 으로 채워 검토하지 않고 멈춘다(조용히 '전 부재 OK' 가 나오는 것 방지) → 형식 문제이므로 자동 보고
+    missing = [name for name, ks in (("Axial(축력)", ("n",)), ("Shear(전단력)", ("vy", "vz")), ("Moment(모멘트)", ("my", "mz"))) if not any(k in idx for k in ks)]
+    if missing:
+        raise SystemExit(f"결과표 머리글에서 {', '.join(missing)} 열을 찾지 못함 — 읽은 머리글: {' | '.join(h for h in hdr if h)[:400]}")
     unit_mode = str(S.get("검토_결과_단위", "auto")).lower().replace(" ", "")
     fu = lu = None
     if unit_mode != "auto" and "," in unit_mode:
@@ -219,7 +329,7 @@ def parse_result(path):
         f_force = 1.0
     if m_scale is None:
         m_scale = f_force * (f_len or 1.0)
-    rows = []; bad = 0; unknown_ids = set()
+    rows = []; bad = 0; unknown_ids = set(); bad_vals = 0; n_vals = 0
     rx_fallback = re.compile(r"^\s*(\d+)\s+(.+?)\s+(I\[?\d*\]?|J\[?\d*\]?|\d/\d|I|J|MID\w*|중앙|시작|끝)\s+([-+\d.eE\s,]+)$", re.I)
     for l in lines[hdr_i + 1:]:
         if not l.strip():
@@ -250,10 +360,20 @@ def parse_result(path):
             unknown_ids.add(eid); continue
         vals = {}
         for k in ("n", "vy", "vz", "t", "my", "mz"):
-            v = to_float(get(k)) if k in idx or isinstance(cols, dict) else None
+            raw_v = get(k) if k in idx or isinstance(cols, dict) else None
+            v = to_float(raw_v)
+            if raw_v not in (None, ""):
+                n_vals += 1
+                if v is None:
+                    bad_vals += 1  # 값이 적혀 있는데 숫자로 읽지 못함
             vals[k] = (v or 0.0) * (m_scale if k in ("t", "my", "mz") else f_force)
         rows.append({"elem": eid, "load": str(get("load") or "-").strip(), "part": parse_part(get("part") or "M"), **vals})
+    if n_vals and bad_vals > 0.02 * n_vals:
+        raise SystemExit(f"결과표의 부재력 값 {bad_vals}개(전체 {n_vals}개 중)를 숫자로 읽지 못함 — 결과표 형식 확인 필요")
+    letter = lambda j: (chr(64 + (j + 1 - 1) // 26) if j >= 26 else "") + chr(65 + j % 26)
+    col_names = {"elem": "요소", "load": "하중", "part": "위치", "n": "축력", "vy": "전단-y", "vz": "전단-z", "t": "비틀림", "my": "모멘트-y", "mz": "모멘트-z"}
     meta = {"file": os.path.basename(path), "header": hdr, "delim": {"\t": "tab", ",": "comma", None: "space"}[delim], "rows": len(rows), "skipped": bad,
+            "bad_values": bad_vals, "columns": {col_names[k]: f"{letter(j)}열 {hdr[j]}" for k, j in idx.items()},
             "unknown_ids": sorted(unknown_ids)[:50], "unknown_count": len(unknown_ids), "force_to_kN": f_force, "moment_to_kNmm": m_scale, "unit_mode": unit_mode}
     return rows, meta
 
@@ -261,7 +381,12 @@ def parse_result(path):
 step("MIDAS 결과표 읽기")
 rows, meta = parse_result(res_p)
 if not rows:
-    raise SystemExit(f"결과표에서 요소 대응표와 번호가 맞는 행이 없음(읽은 행 {meta['rows']}, 모르는 요소 번호 {meta['unknown_count']}개) — 3단계 MGT 를 그대로 해석한 결과표인지 확인")
+    if meta["unknown_count"]:  # 다른 모델의 결과표를 넣은 경우 = 사용자가 고칠 입력 문제(자동 오류 보고 대상 아님)
+        raise SystemExit(f"입력 오류: 결과표의 요소 번호가 선택한 모델과 하나도 맞지 않습니다(모르는 요소 번호 {meta['unknown_count']}개) — 선택한 모델을 해석한 결과표인지 확인해 주세요")
+    raise SystemExit(f"결과표에서 읽을 수 있는 행이 없음(머리글은 찾았으나 형식 불일치 {meta['skipped']}행) — 결과표 형식 확인 필요")
+if not any(abs(r[k]) > 1e-9 for r in rows for k in ("n", "vy", "vz", "my", "mz")):
+    # 부재력이 전부 0 이면 검토해도 전 부재 OK(D/C 0)만 나오므로 결과를 만들지 않는다. 열을 잘못 읽었을 가능성이 있어 자동 보고 대상
+    raise SystemExit(f"결과표의 축력·전단력·모멘트가 전부 0 으로 읽힘({len(rows)}행) — 해석을 마친 뒤 내보낸 결과표인지 확인해 주세요. 읽은 열: {meta['columns']}")
 loads = sorted({r["load"] for r in rows})
 log(f"행 {len(rows)}개, 하중 {len(loads)}종 {loads[:8]}{'…' if len(loads) > 8 else ''}, 단위 환산 힘×{meta['force_to_kN']:g}→kN 모멘트×{meta['moment_to_kNmm']:g}→kN·mm, 모르는 요소 {meta['unknown_count']}개")
 
@@ -435,8 +560,8 @@ def check_column(e, dims, rebar, rws):
                     dc = radial_dc(curves[ax], Pu, Mu * 1e3)
             else:
                 dc = radial_dc(curves[ax], Pu, Mu * 1e3)
-            if dc > res["dc"]:
-                res["dc"] = dc
+            if dc > res["dc"] or res["gov"] is None:  # 부재력이 0 인 요소도 지배 하중·Pu·Mu·Vu 칸이 비지 않게 첫 행을 기록
+                res["dc"] = max(res["dc"], dc)
                 res["gov"] = {"load": r["load"], "part": r["part"], "axis": ax, "Pu": round(Pu, 1), "Mu": round(Mu / 1e3, 1), "Vu": round(math.hypot(r["vy"], r["vz"]), 1)}
     res["rho"] = rho
     res["slender"] = {ax: round(v[0], 1) for ax, v in slender.items()}
@@ -508,8 +633,8 @@ def check_beam(e, dims, rebar, rws):
             res["dc_m"] = dc_m
         if dc_v > res["dc_v"]:
             res["dc_v"] = dc_v
-        if dc > res["dc"]:
-            res["dc"] = dc
+        if dc > res["dc"] or res["gov"] is None:
+            res["dc"] = max(res["dc"], dc)
             res["gov"] = {"load": r["load"], "part": r["part"], "Pu": round(-r["n"], 1), "Mu": round(Mu / 1e3, 1), "Vu": round(Vu, 1), "mode": "휨" if dc_m >= dc_v else "전단"}
     res["flags"] = sorted(set(res["flags"]))
     return res
@@ -671,6 +796,15 @@ def tuplify(rb):
     return {k: list(v) for k, v in rb.items()}
 
 
+def nz(c):
+    """엑셀 칸 값: 없으면 '-'. (값, 서식) 묶음도 처리. 숫자 -0.0 은 0 으로"""
+    if isinstance(c, tuple):
+        return (nz(c[0]),) + tuple(c[1:])
+    if c is None or c == "":
+        return "-"
+    return c + 0.0 if isinstance(c, float) else c
+
+
 summary = {"total": len(elements), **cnt, "by_kind": by_kind, "loads": loads, "combo_note": combo_note, "parse": meta,
            "settings": S, "elements_file": os.path.basename(elem_p), "result_file": os.path.basename(res_p), "at": time.strftime("%Y-%m-%d %H:%M:%S"),
            "sections": SECS, "dims_changed": sum(1 for r in results if r.get("rec") and r["rec"]["dims_changed"])}
@@ -699,9 +833,10 @@ for r in sorted(results, key=lambda x: (order[x["kind"]], x["id"])):
     part_ko = {"I": "I단", "J": "J단", "M": "중앙"}.get(g.get("part"), "")
     if r["kind"] == "col" and g.get("axis"):
         part_ko += f" M{g['axis']}"
-    rows_x.append([r["id"], r.get("floor") or "", KIND_KO[r["kind"]], f"{r['H']:.0f}×{r['B']:.0f}", round(r["fck"]), bars, stir, g.get("Pu", ""), g.get("Mu", ""), g.get("Vu", ""),
-                   g.get("load", ""), part_ko, r.get("dc_m") if r["kind"] != "col" else r.get("dc"), r.get("dc_v") if r["kind"] != "col" else "", r.get("dc") if r["dc"] is not None else "",
-                   judge, *rec_cells, "; ".join(r.get("flags") or [])])
+    # 빈 칸을 남기지 않는다: 해당 없음(기둥의 전단 D/C, OK 부재의 추천, 결과표에 없는 요소)은 "-" — 읽기 실패로 생긴 공란과 구분되게
+    rows_x.append([nz(c) for c in [r["id"], r.get("floor"), KIND_KO[r["kind"]], f"{r['H']:.0f}×{r['B']:.0f}", round(r["fck"]), bars, stir, g.get("Pu"), g.get("Mu"), g.get("Vu"),
+                                   g.get("load"), part_ko, r.get("dc_m") if r["kind"] != "col" else r.get("dc"), r.get("dc_v") if r["kind"] != "col" else None, r.get("dc"),
+                                   judge, *rec_cells, "; ".join(r.get("flags") or [])]])
 sum_rows = [[("항목", 1), ("값", 1)],
             ["검토 시각", summary["at"]], ["요소 대응표", summary["elements_file"]], ["MIDAS 결과표", summary["result_file"]],
             ["검토 요소 수", summary["total"]], ["OK", summary["ok"]], ["NG", summary["ng"]], ["결과 없음(결과표에 요소 없음)", summary["none"]],
@@ -721,6 +856,7 @@ if EXC.get("reasons"):
 sum_rows += [["하중", combo_note], ["하중 목록", ", ".join(loads)],
              ["단위 환산", f"힘 ×{meta['force_to_kN']:g} → kN, 모멘트 ×{meta['moment_to_kNmm']:g} → kN·mm (머리글: {' | '.join(meta['header'])})"],
              ["읽은 행 / 건너뜀 / 모르는 요소", f"{meta['rows']} / {meta['skipped']} / {meta['unknown_count']}" + (f" {meta['unknown_ids'][:20]}" if meta["unknown_ids"] else "")],
+             ["결과표에서 읽은 열", ", ".join(f"{k} = {v}" for k, v in meta["columns"].items()) + (f" (숫자로 읽지 못한 값 {meta['bad_values']}개는 0 처리)" if meta["bad_values"] else "")],
              ["", ""], [("설계 기준", 1), ("KDS 14 20 강도설계법 — εcu 0.0033, β1 0.80(fck≤40), φ 휨 0.65~0.85, φ 전단 0.75, 기둥 φPn,max=0.80φPo, 최소 편심 15+0.03h, 장주 δns(Cm=1, k=설정)", 5)]]
 for k, v in S.items():
     sum_rows.append([k, str(v)])

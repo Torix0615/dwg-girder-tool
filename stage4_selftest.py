@@ -76,15 +76,94 @@ def write_combos(path):
                 f.write("\t".join([str(eid), name, part] + [f"{x:.3f}" for x in v]) + "\n")
 
 
+# MIDAS Gen 결과 테이블(Beam Force)을 그대로 저장했을 때의 열 배치 — 전문가 실제 화면(2026-11-11): 앞 두 열 비어 있음, 표 위 제목 줄,
+# 머리글 칸 안에 줄바꿈("Axial⏎(kN)", "Moment-⏎y⏎(kN·m)"), Elem/Load/Part 사이와 뒤에 다른 열(Step Order·Part Order·Load Order 등) 섞임.
+MIDAS_HDR = ["", "", "Member", "Elem", "Load", "Stage", "Step", "Step Order", "Part", "Part Order", "Component", "Axial\n(kN)", "Shear-y\n(kN)", "Shear-z\n(kN)",
+             "Torsion\n(kN·m)", "Moment-\ny\n(kN·m)", "Moment-\nz\n(kN·m)", "Bi-\nMoment\n(kN·m²)", "T-\nMoment\n(kN·m)", "W-\nMoment\n(kN·m)", "Load Order", "Compo Order", "Stress"]
+
+
+def midas_row(r):
+    part_order = 0 if r[2].startswith("I") else 4 if r[2].startswith("J") else 2
+    return ["", "", "", r[0], r[1], "", "", 0, r[2], part_order, "", r[3], r[4], r[5], r[6] * 1e-3, r[7] * 1e-3, r[8] * 1e-3, 0, 0, 0, 3200089, 0, ""]
+
+
+def write_midas_csv(path, enc):
+    """엑셀에서 'CSV(쉼표로 분리)'로 저장한 형태: 줄바꿈이 든 머리글 칸은 따옴표로 감싸져 여러 줄에 걸친다(1.6.0 까지 머리글을 첫 줄에서 잘라 읽어 부재력이 전부 0 → 전 부재 OK 로 나온 원인)"""
+    import csv
+    with open(path, "w", encoding=enc, newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["", "Beam Force"]); w.writerow([])
+        w.writerow(MIDAS_HDR)
+        for r in rows:
+            w.writerow([f"{x:.4f}" if isinstance(x, float) else x for x in midas_row(r)])
+
+
+def write_xlsx_excel(path):
+    """엑셀이 저장하는 형태의 .xlsx(MIDAS 열 배치, kN·m): 문자열은 공유 문자열(t="s"), 숫자는 <v>, 셀 주소 있음, 빈 칸은 셀 생략(열 밀림 검사),
+    첫 시트는 머리글 없는 표지·둘째 시트가 결과표(머리글 있는 시트 찾기 검사), 표 위에 제목 줄, 머리글 칸 안에 줄바꿈."""
+    import zipfile
+    from xml.sax.saxutils import escape
+    sst = {}
+
+    def s(text):
+        return sst.setdefault(text, len(sst))
+
+    def col(i):
+        return chr(65 + i)
+
+    def cell(i, n, v):
+        if v == "":
+            return ""
+        return f'<c r="{col(i)}{n}" t="s"><v>{s(v)}</v></c>' if isinstance(v, str) else f'<c r="{col(i)}{n}"><v>{v!r}</v></c>'
+
+    xml_rows = [f'<row r="1"><c r="B1" t="s"><v>{s("Beam Force")}</v></c></row>',
+                '<row r="3">' + "".join(cell(i, 3, h) for i, h in enumerate(MIDAS_HDR)) + "</row>"]
+    for n, r in enumerate(rows, start=4):
+        xml_rows.append(f'<row r="{n}">' + "".join(cell(i, n, v) for i, v in enumerate(midas_row(r))) + "</row>")
+    ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+    sheet = lambda body: f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet {ns}><sheetData>{body}</sheetData></worksheet>'
+    cover = sheet(f'<row r="1"><c r="A1" t="s"><v>{s("표지 — 흑석동 구조 검토용 결과")}</v></c></row>')
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                   '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
+                   '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+                   '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+                   '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+                   '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>')
+        z.writestr("_rels/.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                   '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')
+        z.writestr("xl/workbook.xml", f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook {ns} xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                   '<sheets><sheet name="표지" sheetId="1" r:id="rId1"/><sheet name="Beam Force" sheetId="2" r:id="rId2"/></sheets></workbook>')
+        z.writestr("xl/_rels/workbook.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                   '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+                   '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>'
+                   '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>')
+        z.writestr("xl/worksheets/sheet1.xml", cover)
+        z.writestr("xl/worksheets/sheet2.xml", sheet("".join(xml_rows)))
+        z.writestr("xl/sharedStrings.xml", f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst {ns} count="{len(sst)}" uniqueCount="{len(sst)}">'
+                   + "".join(f"<si><t>{escape(t)}</t></si>" for t in sst) + "</sst>")
+
+
+def write_xlsx_inline(path):
+    """인라인 문자열(t="inlineStr") 형태의 .xlsx(kN·mm) — 우리 stage4_xlsx 작성기로 만든다(다른 프로그램이 내보낸 파일 흉내)"""
+    from stage4_xlsx import write_xlsx
+    hdr = ["Elem", "Load", "Part", "Axial (kN)", "Shear-y (kN)", "Shear-z (kN)", "Torsion (kN*mm)", "Moment-y (kN*mm)", "Moment-z (kN*mm)"]
+    write_xlsx(path, [{"name": "Beam Force", "rows": [hdr] + [[r[0], r[1], r[2], *[round(x, 4) for x in r[3:]]] for r in rows]}])
+
+
 cases = [("tab_mm_cases.txt", "\t", "mm"), ("csv_m_cases.csv", ",", "m"), ("space_mm_cases.txt", " ", "mm")]
 for name, d, u in cases:
     write_cases(os.path.join(out_dir, name), d, u)
 write_combos(os.path.join(out_dir, "tab_mm_combos.txt"))
+write_xlsx_excel(os.path.join(out_dir, "xlsx_m_cases.xlsx"))
+write_xlsx_inline(os.path.join(out_dir, "xlsx_inline_mm_cases.xlsx"))
+write_midas_csv(os.path.join(out_dir, "midas_cp949_cases.csv"), "cp949")
+write_midas_csv(os.path.join(out_dir, "midas_utf8bom_cases.csv"), "utf-8-sig")
 HERE = os.path.dirname(os.path.abspath(__file__))
 env = dict(os.environ, PYTHONUTF8="1")
 ref = None
 fails = []
-for name in [c[0] for c in cases] + ["tab_mm_combos.txt"]:
+for name in [c[0] for c in cases] + ["tab_mm_combos.txt", "xlsx_m_cases.xlsx", "xlsx_inline_mm_cases.xlsx", "midas_cp949_cases.csv", "midas_utf8bom_cases.csv"]:
     od = os.path.join(out_dir, "chk_" + name.split(".")[0])
     r = subprocess.run([sys.executable, os.path.join(HERE, "stage4_check.py"), elem_p, os.path.join(out_dir, name), od] + cfg, cwd=HERE, env=env, text=True, encoding="utf-8", errors="replace", capture_output=True)
     summ = next((l for l in r.stdout.splitlines() if l.startswith("SUMMARY=")), None)
