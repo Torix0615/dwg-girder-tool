@@ -288,7 +288,7 @@ def parse_result(path):
         lines = [l.rstrip("\r\n") for l in text.splitlines()]
         head = "\n".join(lines[:40]).upper()
         if "MIDAS GEN TEXT(MGT)" in head or ("*VERSION" in head and "*UNIT" in head):
-            raise SystemExit("입력 오류: 첨부한 파일은 MIDAS 모델(MGT) 입니다 — 4단계에는 MIDAS 에서 해석한 결과표(Beam Force: Elem, Load, Part, Axial, Shear, Moment 열)를 텍스트(.txt)·CSV·엑셀(.xlsx)로 내보낸 파일을 첨부해야 합니다")
+            raise SystemExit("입력 오류: 첨부한 파일은 MIDAS 모델(MGT) 입니다 — 구조 검토에는 MIDAS 에서 해석한 결과표(Beam Force: Elem, Load, Part, Axial, Shear, Moment 열)를 텍스트(.txt)·CSV·엑셀(.xlsx)로 내보낸 파일을 첨부해야 합니다")
         hdr_i, hdr, delim = find_header(lines)
         # CSV 는 따옴표 안에 줄바꿈이 든 칸(머리글 "Axial⏎(kN)")이 있을 수 있다. 줄 단위로만 읽으면 머리글이 첫 줄에서 잘려 Axial 뒤 열을 못 찾고
         # 부재력이 전부 0 으로 들어간다(1.6.0 까지의 증상: 전 부재 OK·공란). 파일 전체를 CSV 로 읽은 줄 목록도 만들어 머리글에서 더 많은 열을 찾는 쪽을 쓴다.

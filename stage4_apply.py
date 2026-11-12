@@ -130,7 +130,7 @@ if dg_start is not None and new_lines:
     while dg_end > dg_start + 1 and not out[dg_end - 1].strip():
         dg_end -= 1
     out = out[:dg_end] + new_lines + out[dg_end:]
-head = [f";  4단계 구조 검토 승인 반영 {time.strftime('%Y/%m/%d %H:%M')} — 단면 치수 변경 {n_changed}개 요소, 새 단면 {len(new_secs)}개, 치수 단위 {LEN_UNIT} (철근은 엑셀 참조)"]
+head = [f";  구조 검토 승인 반영{time.strftime('%Y/%m/%d %H:%M')} — 단면 치수 변경 {n_changed}개 요소, 새 단면 {len(new_secs)}개, 치수 단위 {LEN_UNIT} (철근은 엑셀 참조)"]
 if out and out[0].startswith(";"):
     out = out[:1] + head + out[1:]
 else:

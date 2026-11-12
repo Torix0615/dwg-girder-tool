@@ -29,24 +29,22 @@
   </div>
   <div id="prepBar" class="prepbar hidden"></div>
 
-  <!-- 작업이 하나도 없을 때 -->
-  <section id="empty" class="empty hidden">
-    <button id="btnStartEmpty" class="btn big">작업 시작</button>
-    <p class="hint">DWG 또는 DXF 도면 1개를 선택하면 골조·거더·보 DXF 가 만들어집니다.</p>
-    <button id="btnS4Empty" class="btn">4단계 구조 검토 (MGT)</button>
-    <p class="hint">도면 작업 없이 4단계만 — 수작업을 마친 MIDAS 모델(.mgt)과 해석 결과표로 기둥·거더·보를 검토합니다.</p>
-    <button id="btnFeedbackEmpty" class="btn ghost small">✎ 피드백 보내기 (도면 작업 없이)</button>
-  </section>
+  <!-- Nav: 작업 시작·피드백 버튼 모음 (설정 화면에서도 보임) -->
+  <nav id="nav" class="nav">
+    <button id="btnStart" class="btn" title="도면(DWG·DXF) 1개를 선택해 골조·거더·보 DXF 와 MIDAS GEN MGT 를 만듭니다">+ 골조 모델링</button>
+    <button id="btnS4" class="btn" title="수작업을 마친 MIDAS 모델(.mgt)을 선택해 구조 검토를 시작합니다">+ 구조 검토</button>
+    <button id="btnFeedback" class="btn ghost" title="작업 없이 보내는 피드백">피드백</button>
+    <span class="nav-sp"></span>
+    <button id="btnLog" class="btn ghost" title="지금까지 보낸 피드백">피드백 로그</button>
+  </nav>
 
-  <!-- 작업이 있을 때: 왼쪽 목록 + 오른쪽 상세 -->
-  <section id="work" class="work hidden">
-    <aside class="side">
+  <!-- 왼쪽 목록(작업 목록 또는 피드백 로그) + 폭 조절 줄 + 오른쪽 화면 -->
+  <section id="work" class="work">
+    <aside id="side" class="side">
       <ul id="jobList" class="joblist"></ul>
-      <button id="btnStart" class="btn wide">+ 작업 시작</button>
-      <button id="btnS4" class="btn wide" title="도면 작업 없이 4단계만: 수작업을 마친 MIDAS 모델(.mgt) 선택">+ 4단계 구조 검토 (MGT)</button>
-      <button id="btnFeedback" class="btn ghost wide small">✎ 피드백 보내기</button>
     </aside>
-    <main id="detail" class="detail"></main>
+    <div id="divider" class="divider" title="끌어서 왼쪽 목록의 폭을 조절"></div>
+    <main id="detail" class="detail"><div id="dTop"></div><div id="dFb"></div></main>
   </section>
 
   <!-- 정보 패널 -->
@@ -54,11 +52,14 @@
     <h3>설정</h3>
     <p class="hint">모든 도면에 공통으로 적용되는 값만 둡니다. 저장하면 <b>다음 작업부터</b> 적용됩니다.</p>
     <div class="setgrp">
-      <h4>실행 범위 — 어디까지 진행하고 저장할지</h4>
-      <div class="radios col" id="setStage">
-        <label><input type="radio" name="stage" value="1" /> 1단계까지 — 골조·중심선·OPEN 추출 후 DXF 저장</label>
-        <label><input type="radio" name="stage" value="2" /> 2단계까지 — 거더·보 생성 후 DXF 저장</label>
-        <label><input type="radio" name="stage" value="3" /> 3단계까지 — MIDAS GEN MGT 까지 생성 (기본)</label>
+      <h4>골조 모델링 실행 범위 — 어디까지 진행하고 저장할지</h4>
+      <div class="segrow">
+        <div class="seg" id="setStage">
+          <button type="button" data-v="1">1단계까지</button>
+          <button type="button" data-v="2">2단계까지</button>
+          <button type="button" data-v="3">3단계까지</button>
+        </div>
+        <span class="seg-desc" id="setStageDesc"></span>
       </div>
     </div>
     <div class="setgrp" id="setBeamGrp">
@@ -80,8 +81,8 @@
       </div>
     </div>
     <div class="setgrp" id="setChkGrp">
-      <h4>4단계 구조 검토 — MIDAS GEN 해석 결과로 기둥·거더·보 검토 (KDS 14 20 강도설계법)</h4>
-      <p class="hint"><b>4단계 구조 검토 (MGT)</b> 로 수작업을 마친 MIDAS 모델(.mgt)을 선택하고, 그 모델을 <b>해석</b>한 결과 테이블(Beam Force)을 텍스트(.txt·.csv) 또는 엑셀(.xlsx)로 저장한 뒤, 왼쪽 목록에서 그 모델을 누르면 오른쪽에 나오는 <b>MIDAS 해석 결과표(텍스트·엑셀) 첨부 → 검토 실행</b> 버튼으로 첨부하면 검토합니다(1·2·3단계 작업 없이 단독 실행). 콘크리트 강도는 모델의 재료 등급(C27·C30·C35 등)을 우선 쓰고, 등급이 없을 때만 아래 fck 값을 씁니다. 아래 값은 검토 시작값이며, NG 부재는 <b>철근 → 폭 → 춤</b> 순으로 추천합니다. 철근은 <b>개수-직경</b>(예 4-D22), 띠철근·스터럽은 <b>직경@간격</b>(예 D10@200)으로 적습니다.</p>
+      <h4>구조 검토 — MIDAS GEN 해석 결과로 기둥·거더·보 검토 (KDS 14 20 강도설계법)</h4>
+      <p class="hint">위의 <b>+ 구조 검토</b> 로 수작업을 마친 MIDAS 모델(.mgt)을 선택하고, 그 모델을 <b>해석</b>한 결과 테이블(Beam Force)을 텍스트(.txt·.csv) 또는 엑셀(.xlsx)로 저장한 뒤, 왼쪽 목록에서 그 모델을 누르면 오른쪽에 나오는 <b>MIDAS 해석 결과표(텍스트·엑셀) 첨부 → 검토 실행</b> 버튼으로 첨부하면 검토합니다(골조 모델링 없이 단독 실행). 콘크리트 강도는 모델의 재료 등급(C27·C30·C35 등)을 우선 쓰고, 등급이 없을 때만 아래 fck 값을 씁니다. 아래 값은 검토 시작값이며, NG 부재는 <b>철근 → 폭 → 춤</b> 순으로 추천합니다. 철근은 <b>개수-직경</b>(예 4-D22), 띠철근·스터럽은 <b>직경@간격</b>(예 D10@200)으로 적습니다.</p>
       <div class="nums">
         <label><span>콘크리트 fck — 기둥</span><input type="number" data-key="검토_fck_기둥" min="18" max="100" step="1" inputmode="numeric" /><em>MPa</em><i class="dflt"></i></label>
         <label><span>콘크리트 fck — 거더·보</span><input type="number" data-key="검토_fck_보" min="18" max="100" step="1" inputmode="numeric" /><em>MPa</em><i class="dflt"></i></label>
@@ -125,24 +126,14 @@
     <div class="row"><button id="btnInfoClose" class="btn small">닫기</button></div>
   </section>
 
-  <!-- 피드백 패널: 도면 작업 없이 보내는 피드백(프로그램 화면·기능 요청 / 생성 규칙 의견) -->
-  <section id="general" class="info hidden">
-    <h3>피드백 보내기</h3>
-    <p class="hint">도면 작업과 상관없이 보낼 수 있습니다. 버튼 위치·화면 배치·기능 추가 같은 <b>프로그램</b> 의견과, 거더·보 생성 <b>규칙</b> 의견 모두 받습니다. 도면 파일은 첨부되지 않습니다(특정 결과에 대한 의견은 왼쪽 목록에서 그 작업을 누르면 오른쪽 화면 아래에 나오는 "피드백" 칸으로).</p>
-    <div class="radios" id="gfKind">
-      <label><input type="radio" name="gkind" value="ui" checked /> 프로그램 화면·기능 (버튼 위치·레이아웃·기능 추가·수정)</label>
-      <label><input type="radio" name="gkind" value="rule" /> 생성 규칙·결과 (모든 도면 공통)</label>
-      <label><input type="radio" name="gkind" value="unknown" /> 모름</label>
+  <!-- 확인 팝업 -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-box" role="dialog" aria-modal="true">
+      <h3 id="modalTitle"></h3>
+      <p id="modalBody"></p>
+      <div class="modal-acts"><button id="modalCancel" class="btn ghost">취소</button><button id="modalOk" class="btn">확인</button></div>
     </div>
-    <textarea id="gfText" rows="7" placeholder="예) 결과 DXF 다운로드 버튼을 목록 위쪽으로 옮기고 싶다.&#10;예) 작업 목록을 오른쪽에, 상세를 왼쪽에 두는 배치가 편하다.&#10;예) 보 분할 기준 길이를 설정에서 바꿀 수 있게 해 달라."></textarea>
-    <p class="hint" id="gfAuto"></p>
-    <div class="row gap">
-      <button id="gfSend" class="btn">전송하기</button>
-      <button id="gfClose" class="btn ghost small">닫기</button>
-      <span id="gfMsg" class="msg"></span>
-    </div>
-    <div id="gfHistory" class="gf-history"></div>
-  </section>
+  </div>
   <script src="classify.js"></script>
   <script src="app.js"></script>
 </body>

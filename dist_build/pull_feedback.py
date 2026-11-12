@@ -41,6 +41,8 @@ def kind_label(meta, text):
     프로그램(UI·기능)·UI 의심 건은 규칙 코드가 아니라 desktop/ 를 고쳐 release.py --shell 로 배포(FEEDBACK_LOOP 2절 '프로그램 변경')."""
     if meta.get("kind") == "error":
         return "오류보고"
+    if meta.get("kind") == "sample":  # [건너뛰기] = 결과에 문제 없음으로 표시한 작업(원본·결과 첨부) — 피드백·오류 파일과 견주는 기준 표본
+        return "표본(문제 없음)"
     cat = meta.get("category")
     auto = meta.get("category_auto") or classify(text)
     if meta.get("kind") == "general":  # 도면 작업 없이 보낸 피드백(첨부 없음)
@@ -99,10 +101,13 @@ def main():
         files = ", ".join(sorted(os.listdir(os.path.join(d, "files")))) if os.path.isdir(os.path.join(d, "files")) else "-"
         verdict = open(os.path.join(d, "판정.md"), encoding="utf-8").read().splitlines()[0] if os.path.exists(os.path.join(d, "판정.md")) else "(미판정)"
         kind = kind_label(meta, meta.get("text") or body)
+        if meta.get("kind") == "sample" and verdict == "(미판정)":
+            verdict = "표본 — 판정 대상 아님"
         kinds.append((fid, kind, verdict))
         rows.append(f"| {fid} | {kind} | {meta.get('scope', '-')} | {meta.get('job', '-')} | {body} | {verdict} |")
     with open(os.path.join(OUT, "INDEX.md"), "w", encoding="utf-8") as f:
         f.write("# 피드백·오류보고 목록\n\n판정은 각 폴더의 판정.md 첫 줄(공통 규칙 → 코드 반영 / 이 도면 전용 / 프로그램 변경 / 보류). 오류보고는 재현 후 코드 수정이 원칙. "
+                "종류 `표본(문제 없음)` 은 사용자가 [건너뛰기] 로 결과에 문제가 없다고 표시한 작업(판정 대상 아님 — 피드백·오류 파일과 견주는 기준 자료). "
                 "종류 `프로그램(UI·기능)`·`피드백(UI·기능 의심)` 은 도면 규칙이 아니라 프로그램 화면·기능 요청 → desktop/ 수정 후 `release.py --shell`. 절차는 docs/FEEDBACK_LOOP.md\n\n")
         f.write("| id | 종류 | 구분 | 도면 | 내용 | 판정 |\n|---|---|---|---|---|---|\n" + "\n".join(rows) + "\n")
     print(f"INDEX 갱신: {os.path.join(OUT, 'INDEX.md')} ({len(rows)}건)")

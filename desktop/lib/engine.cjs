@@ -250,7 +250,7 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
       if (jobs.some((j) => j.src === p && (j.state === 'queued' || j.state === 'running'))) continue;
       const id = ++seq;
       const base = path.basename(p, path.extname(p));
-      const job = { id, src: p, name: path.basename(p), state: 'queued', step: '', stepIdx: 0, total: 0, started: 0, ended: 0, outdir: path.join(RESULTS, `${id}_${base}`), result: null, report: null, message: '', feedback: null, log: [] };
+      const job = { id, src: p, name: path.basename(p), state: 'queued', step: '', stepIdx: 0, total: 0, created: Date.now(), started: 0, ended: 0, outdir: path.join(RESULTS, `${id}_${base}`), result: null, report: null, message: '', feedback: null, log: [] };
       if (s4) job.kind = 's4';
       jobs.push(job);
       added = id;
@@ -468,6 +468,16 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     return true;
   }
 
+  /** 작업 결과 화면에서 쓰던 피드백(종류·내용)을 작업마다 저장 — 다른 화면에 다녀오거나 프로그램을 다시 켜도 남음. null = 지움. 화면을 다시 그리지 않도록 emit 하지 않는다 */
+  function setDraft(id, draft) {
+    const j = jobs.find((x) => x.id === id);
+    if (!j) return false;
+    if (draft && typeof draft.text === 'string') j.draft = { text: draft.text.slice(0, 5000), kind: draft.kind === 'file' ? 'file' : 'rule' };
+    else delete j.draft;
+    saveJobs();
+    return true;
+  }
+
   function setErrorReport(id, er, which = 'job') {
     const j = jobs.find((x) => x.id === id);
     if (!j) return false;
@@ -487,10 +497,11 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     if (!j || j.state !== 'done') return { ok: false, message: '완료된 작업에서만 검토할 수 있습니다' };
     // 1.6.0: 4단계는 수작업(MIDAS 수정·해석)을 마친 모델 MGT 로만 검토한다. 3단계가 만든 MGT 를 고치면 요소 번호가 달라져
     // 도면 작업의 대응표로는 엉뚱한 요소를 검토하게 되므로 도면 작업 카드에서는 실행하지 않는다.
-    if (j.kind !== 's4') return { ok: false, message: '4단계는 수작업을 마친 MIDAS 모델(.mgt)로 시작합니다 — "4단계 구조 검토 (MGT)" 를 눌러 모델을 선택해 주세요' };
+    if (j.kind !== 's4') return { ok: false, message: '구조 검토는 수작업을 마친 MIDAS 모델(.mgt)로 시작합니다 — 위의 [+ 구조 검토] 를 눌러 모델을 선택해 주세요' };
     if (!j.mgt || !j.elements || !fs.existsSync(j.elements)) return { ok: false, message: '모델 MGT·요소 대응표가 없습니다 — 모델을 다시 선택해 주세요' };
     if (proc4) return { ok: false, message: '다른 검토가 진행 중입니다' };
     if (!txtPath || !fs.existsSync(txtPath)) return { ok: false, message: '결과표 파일이 없습니다' };
+    if (j.feedback && j.feedback.skipped) j.feedback = null; // 다시 검토하면 결과가 달라지므로 "문제 없음" 표시는 지움(새 결과로 다시 판단)
     const dir = path.join(j.outdir, 'stage4');
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
@@ -604,7 +615,12 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     return jobs.filter((j) => j.state === 'failed' && j.failKind === 'error' && !(j.errorReport && j.errorReport.sent));
   }
 
-  return { enqueue, cancel, remove, setFeedback, setErrorReport, pendingErrorReports, state, versions, ensureInstalled, ensureConfig, getSettings, setSettings, runStage4, applyStage4, stage4Busy, isIdle: () => !current && !proc4, job: (id) => jobs.find((j) => j.id === id) || null, paths: { APP, RT, CFG, PY, RESULTS }, EXT, MGT_EXT };
+  /** [건너뛰기](결과에 문제 없음)로 표시했지만 표본을 아직 서버로 못 보낸 작업 — 시작 때 재시도용 */
+  function pendingSamples() {
+    return jobs.filter((j) => j.state === 'done' && j.feedback && j.feedback.skipped && !(j.feedback.sample && j.feedback.sample.sent));
+  }
+
+  return { enqueue, cancel, remove, setFeedback, setDraft, setErrorReport, pendingErrorReports, pendingSamples, state, versions, ensureInstalled, ensureConfig, getSettings, setSettings, runStage4, applyStage4, stage4Busy, isIdle: () => !current && !proc4, job: (id) => jobs.find((j) => j.id === id) || null, paths: { APP, RT, CFG, PY, RESULTS }, EXT, MGT_EXT };
 }
 
 module.exports = { createEngine, cmpVer, readText, swapDir };

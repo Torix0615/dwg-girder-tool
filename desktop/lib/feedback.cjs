@@ -1,6 +1,6 @@
 'use strict';
 /**
- * 작업별 피드백: 내용 + 구분(이 도면만/모든 도면/모름) + 원본·결과 DXF·report·config·로그를 zip 으로 묶어(app/feedback.py)
+ * 작업별 피드백: 내용 + 종류(공통 규칙/이 파일에만 해당) + 원본·결과 DXF·report·config·로그를 zip 으로 묶어(app/feedback.py)
  * 서버(app/feedback_server.txt: 주소 1줄, 키 없음 — 업로드는 공개 엔드포인트)로 전송(진행률). 서버가 없거나 실패하면 바탕화면 zip 으로 폴백.
  */
 const fs = require('fs');
@@ -11,7 +11,7 @@ const { Readable, Transform } = require('stream');
 const { readText } = require('./engine.cjs');
 const classify = require('../renderer/classify.js'); // 프로그램 화면·기능 / 생성 규칙 자동 분류(렌더러와 공용)
 
-const SCOPE_LABEL = { file: '이 도면에만 해당', all: '모든 도면에 공통', unknown: '모름', error: '자동 오류 보고', general: '도면 작업 없이 보낸 피드백' };
+const SCOPE_LABEL = { file: '이 파일에만 해당', all: '공통 규칙', unknown: '모름', error: '자동 오류 보고', general: '작업 없이 보낸 피드백', sample: '문제 없음 표본([건너뛰기])' };
 const KIND_LABEL = classify.LABEL; // ui / rule / unknown
 
 function desktopDir() {
@@ -34,11 +34,11 @@ function buildZip({ root, engine, text, scope, category, job, log, out }) {
   if (category) head.push(`종류(사용자 선택): ${KIND_LABEL[category] || category}`);
   head.push(`자동 분류: ${KIND_LABEL[auto.category]} (UI: ${auto.ui.join('·') || '-'} / 규칙: ${auto.rule.join('·') || '-'})`);
   const isS4 = Boolean(job && job.kind === 's4'); // 4단계 단독 작업: 원본 = 모델 MGT(결과 폴더 사본이 있으면 사본만 첨부 — 같은 파일 이름 중복 방지)
-  if (isS4) head.push(`대상 모델(4단계 단독): ${job.src}`, `모델 읽기: ${job.message}${job.model ? ` / 기둥 ${job.model.col}·거더 ${job.model.girder}·보 ${job.model.beam} / 제외 ${JSON.stringify(job.model.skipped || {})}` : ''}`);
+  if (isS4) head.push(`대상 모델(구조 검토): ${job.src}`, `모델 읽기: ${job.message}${job.model ? ` / 기둥 ${job.model.col}·거더 ${job.model.girder}·보 ${job.model.beam} / 제외 ${JSON.stringify(job.model.skipped || {})}` : ''}`);
   else if (job) head.push(`대상 도면: ${job.src}`, `결과: ${job.result ? path.basename(job.result) : '(실패)'} / ${job.message}`);
-  else head.push('대상 도면: (없음 — 도면 작업 없이 보낸 피드백)');
+  else head.push('대상 도면: (없음 — 작업 없이 보낸 피드백)');
   const s4 = job && job.stage4;
-  if (s4) head.push(`4단계 구조 검토: ${s4.state} / ${s4.message || ''} / 결과표 ${s4.resultName || '-'}`);
+  if (s4) head.push(`구조 검토: ${s4.state} / ${s4.message || ''} / 결과표 ${s4.resultName || '-'}`);
   const s4dir = s4 && s4.resultTxt ? path.dirname(s4.resultTxt) : null;
   const attach = job
     ? [isS4 && job.mgt && fs.existsSync(job.mgt) ? null : job.src, job.result, job.mgt, job.report, s4 && s4.resultTxt, s4 && s4.xlsx, s4 && s4.mgt2, s4dir && path.join(s4dir, 'check_log.txt'), s4dir && path.join(s4dir, 'check_error.txt')].filter((p) => p && fs.existsSync(p))
@@ -101,6 +101,7 @@ async function upload({ srv, file, meta, onProgress }) {
 async function send({ root, engine, bundledApp, appVersion, text, scope, category, job, log, onProgress = () => {} }) {
   if (!job && scope !== 'general') return { ok: false, sent: false, message: '작업을 찾을 수 없습니다' };
   if (job && job.feedback && job.feedback.sent) return { ok: false, sent: true, message: '이미 전송한 작업입니다' };
+  if (job && job.feedback && job.feedback.skipped) return { ok: false, sent: false, message: '문제 없음으로 표시한 작업입니다' };
   if (!String(text || '').trim()) return { ok: false, sent: false, message: '내용이 비어 있습니다' };
   const stamp = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().replace(/[-:T]/g, '').slice(0, 13).replace(/(\d{8})(\d{4})/, '$1_$2');
   const name = `골조거더보_피드백_${stamp}.zip`;
@@ -146,8 +147,8 @@ async function sendError({ root, engine, bundledApp, appVersion, job, log, which
   const s4 = job.stage4 || {};
   const text =
     which === 'stage4'
-      ? `[자동 오류 보고 — 4단계 구조 검토]\n실패: ${s4.message || '-'}\n원인: ${s4.failReason || '-'}\n결과표: ${s4.resultName || '-'} (첨부)\n도면: ${path.basename(job.src)}`
-      : `[자동 오류 보고${job.kind === 's4' ? ' — 4단계 모델 읽기' : ''}]\n실패: ${job.message}\n원인: ${job.failReason || '-'}\n${job.kind === 's4' ? '모델' : '도면'}: ${path.basename(job.src)}`;
+      ? `[자동 오류 보고 — 구조 검토]\n실패: ${s4.message || '-'}\n원인: ${s4.failReason || '-'}\n결과표: ${s4.resultName || '-'} (첨부)\n도면: ${path.basename(job.src)}`
+      : `[자동 오류 보고${job.kind === 's4' ? ' — 구조 검토 모델 읽기' : ''}]\n실패: ${job.message}\n원인: ${job.failReason || '-'}\n${job.kind === 's4' ? '모델' : '도면'}: ${path.basename(job.src)}`;
   const stamp = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().replace(/[-:T]/g, '').slice(0, 13).replace(/(\d{8})(\d{4})/, '$1_$2');
   const zip = buildZip({ root, engine, text, scope: 'error', job, log, out: path.join(root, 'tmp', `오류보고_${stamp}.zip`) });
   const size = fs.statSync(zip).size;
@@ -164,4 +165,32 @@ async function sendError({ root, engine, bundledApp, appVersion, job, log, which
   }
 }
 
-module.exports = { send, sendError };
+/**
+ * [건너뛰기] = 결과에 문제가 없다고 표시한 작업을 표본으로 서버에 보냄(원본·결과 첨부). 피드백·오류 보고와 별개(kind 'sample').
+ * 피드백이 들어온 파일·오류가 난 파일과 견주는 기준 자료로 쓴다. 서버가 없거나 실패하면 false(다음 실행 때 재시도).
+ */
+async function sendSample({ root, engine, bundledApp, appVersion, job, log }) {
+  const srv = serverInfo(engine, bundledApp);
+  if (!srv) return { ok: false, message: '서버 주소 없음' };
+  const s4 = job.stage4 || {};
+  const text =
+    job.kind === 's4'
+      ? `[문제 없음 표본 — 구조 검토]\n사용자가 [건너뛰기] 로 결과에 문제가 없다고 표시한 작업\n모델: ${path.basename(job.src)}\n결과: ${s4.message || job.message}`
+      : `[문제 없음 표본 — 골조 모델링]\n사용자가 [건너뛰기] 로 결과에 문제가 없다고 표시한 작업\n도면: ${path.basename(job.src)}\n결과: ${job.result ? path.basename(job.result) : '-'} / ${job.message}`;
+  const stamp = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().replace(/[-:T]/g, '').slice(0, 13).replace(/(\d{8})(\d{4})/, '$1_$2');
+  const zip = buildZip({ root, engine, text, scope: 'sample', job, log, out: path.join(root, 'tmp', `문제없음표본_${stamp}.zip`) });
+  const size = fs.statSync(zip).size;
+  const meta = { kind: 'sample', version: appVersion, app: engine.versions().app, scope: 'sample', stage: job.kind === 's4' ? 4 : 0, job: path.basename(job.src), pc: os.hostname(), text: text.slice(0, 2000) };
+  try {
+    const r = await upload({ srv, file: zip, meta, onProgress: () => {} });
+    fs.rmSync(zip, { force: true });
+    log('문제 없음 표본 전송 완료', r.id, size);
+    return { ok: true, id: r.id };
+  } catch (e) {
+    fs.rmSync(zip, { force: true });
+    log('문제 없음 표본 전송 실패', e);
+    return { ok: false, message: e.message };
+  }
+}
+
+module.exports = { send, sendError, sendSample };

@@ -6,6 +6,7 @@ const { createEngine } = require('./lib/engine.cjs');
 const { createUpdater } = require('./lib/updater.cjs');
 
 app.setName('GirderTool');
+if (!app.isPackaged && process.env.GIRDER_TEST_ROOT) app.setPath('userData', process.env.GIRDER_TEST_ROOT); // 개발 검증용: 실제 데이터 폴더·피드백 서버를 건드리지 않는 격리 폴더(설치본에는 영향 없음)
 const START_HIDDEN = process.argv.includes('--hidden');
 const ROOT = app.getPath('userData');
 const BUNDLED = app.isPackaged ? path.join(process.resourcesPath, 'engine') : path.join(__dirname, '..', 'dist_build', 'pkg');
@@ -118,10 +119,10 @@ function showWindow() {
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
     { label: '열기', click: () => showWindow() },
-    { label: '작업 시작…', click: () => startJob() },
-    { label: '4단계 구조 검토 (MGT)…', click: () => startStage4() },
+    { label: '골조 모델링…', click: () => startJob() },
+    { label: '구조 검토…', click: () => startStage4() },
     {
-      label: '피드백 보내기…',
+      label: '피드백…',
       click: () => {
         showWindow();
         send('open-feedback', {});
@@ -156,18 +157,18 @@ function setPinned(on) {
   if (tray) tray.setContextMenu(buildTrayMenu());
 }
 
-/** 작업 시작: 탐색기에서 도면 1개 선택 → 대기열 */
+/** 골조 모델링(1·2·3단계) 시작: 탐색기에서 도면 1개 선택 → 대기열 */
 async function startJob() {
   showWindow();
-  const r = await dialog.showOpenDialog(mainWindow, { title: '도면 선택 (1개)', filters: [{ name: 'DWG/DXF', extensions: ['dwg', 'dxf'] }], properties: ['openFile'] });
+  const r = await dialog.showOpenDialog(mainWindow, { title: '골조 모델링 — 도면 선택 (1개)', filters: [{ name: 'DWG/DXF', extensions: ['dwg', 'dxf'] }], properties: ['openFile'] });
   if (r.canceled || !r.filePaths.length) return null;
   return engine.enqueue(r.filePaths.slice(0, 1));
 }
 
-/** 4단계 단독 시작: 수작업을 마친 MIDAS 모델(.mgt) 1개 선택 → 모델 읽기 작업(1·2·3단계 없이) */
+/** 구조 검토(4단계) 시작: 수작업을 마친 MIDAS 모델(.mgt) 1개 선택 → 모델 읽기 작업(골조 모델링 없이 단독) */
 async function startStage4() {
   showWindow();
-  const r = await dialog.showOpenDialog(mainWindow, { title: '4단계 구조 검토 — MIDAS GEN 모델(.mgt) 선택', filters: [{ name: 'MIDAS Gen MGT', extensions: ['mgt'] }], properties: ['openFile'] });
+  const r = await dialog.showOpenDialog(mainWindow, { title: '구조 검토 — MIDAS GEN 모델(.mgt) 선택', filters: [{ name: 'MIDAS Gen MGT', extensions: ['mgt'] }], properties: ['openFile'] });
   if (r.canceled || !r.filePaths.length) return null;
   return engine.enqueue(r.filePaths.slice(0, 1));
 }
@@ -180,7 +181,7 @@ async function download(jobId, kind = 'dxf') {
   const src = pick[kind];
   if (!j || !src || !fs.existsSync(src)) return { ok: false, message: '결과 파일이 없습니다' };
   const filt = { dxf: [{ name: 'DXF', extensions: ['dxf'] }], mgt: [{ name: 'MIDAS Gen MGT', extensions: ['mgt'] }], mgt2: [{ name: 'MIDAS Gen MGT', extensions: ['mgt'] }], xlsx: [{ name: 'Excel', extensions: ['xlsx'] }] }[kind];
-  const title = { dxf: '결과 DXF 저장', mgt: 'MIDAS GEN MGT 저장', mgt2: '수정 MGT(4단계 승인) 저장', xlsx: '4단계 검토 결과 엑셀 저장' }[kind];
+  const title = { dxf: '결과 DXF 저장', mgt: 'MIDAS GEN MGT 저장', mgt2: '수정 MGT(구조 검토 승인) 저장', xlsx: '구조 검토 결과 엑셀 저장' }[kind];
   const base = path.basename(j.src, path.extname(j.src));
   const name = kind === 'xlsx' ? `${base}_구조검토.xlsx` : path.basename(src);
   const r = await dialog.showSaveDialog(mainWindow, { title, defaultPath: path.join(app.getPath('downloads'), name), filters: filt });
@@ -203,7 +204,52 @@ async function reportError(j, which = 'job') {
   }
 }
 
-/** 4단계: MIDAS 해석 결과표(텍스트) 선택 → 검토 실행 */
+/** 문제 없음 표본 전송(백그라운드): [건너뛰기] 로 표시한 작업의 원본·결과를 서버로. 실패하면 다음 실행 때 재시도 */
+async function sendSample(j) {
+  try {
+    const r = await require('./lib/feedback.cjs').sendSample({ root: ROOT, engine, bundledApp: path.join(BUNDLED, 'app'), appVersion: app.getVersion(), job: j, log });
+    const cur = engine.job(j.id);
+    if (cur && cur.feedback && cur.feedback.skipped) engine.setFeedback(j.id, { ...cur.feedback, sample: { sent: Boolean(r.ok), id: r.id, at: new Date().toISOString() } });
+  } catch (e) {
+    log('문제 없음 표본 전송 실패', e);
+  }
+}
+
+/** [건너뛰기]: 결과에 문제가 없어 피드백이 필요 없는 작업 → "문제 없음" 으로 표시하고 표본으로 보냄 */
+function skipFeedback(jobId) {
+  const j = engine.job(jobId);
+  if (!j || j.state !== 'done') return { ok: false, message: '완료된 작업에서만 건너뛸 수 있습니다' };
+  if (j.kind === 's4' && !(j.stage4 && j.stage4.state === 'done' && j.stage4.summary)) return { ok: false, message: '검토가 끝난 뒤에 건너뛸 수 있습니다' };
+  if (j.feedback && (j.feedback.sent || j.feedback.skipped)) return { ok: false, message: '이미 처리한 작업입니다' };
+  engine.setFeedback(jobId, { skipped: true, sent: false, at: new Date().toISOString() });
+  engine.setDraft(jobId, null);
+  sendSample(engine.job(jobId));
+  return { ok: true };
+}
+
+/** 피드백 로그(보낸 피드백 전체): 제목 = 작업 뒤 피드백은 파일 이름, 작업 없이 보낸 피드백은 첫 문장(길면 자름) */
+function firstSentence(text) {
+  const t = String(text || '').trim().split(/\n|(?<=[.!?。])\s/)[0].trim();
+  return t.length > 60 ? `${t.slice(0, 60)}…` : t || '(내용 없음)';
+}
+function addFeedbackLog(entry) {
+  settings.feedbackLog = [...(settings.feedbackLog || []), entry].slice(-300);
+  saveSettings();
+}
+/** 1.6.x 이전에 보낸 피드백(작업 목록의 전송 기록 + 작업 없이 보낸 내역)을 로그로 옮김 — 처음 한 번 */
+function migrateFeedbackLog() {
+  if (Array.isArray(settings.feedbackLog)) return;
+  const kindOf = { all: 'rule', file: 'file' };
+  const fromJobs = engine
+    .state()
+    .jobs.filter((j) => j.feedback && j.feedback.sent)
+    .map((j) => ({ at: j.feedback.at, source: 'job', title: j.name, kind: kindOf[j.feedback.scope] || 'unknown', text: j.feedback.text || '', id: j.feedback.id, file: j.feedback.file }));
+  const fromGeneral = (settings.feedbackHistory || []).map((h) => ({ at: h.at, source: 'general', title: firstSentence(h.text), kind: ['ui', 'rule'].includes(h.category) ? h.category : 'unknown', text: h.text || '', id: h.id, file: h.file }));
+  settings.feedbackLog = [...fromJobs, ...fromGeneral].sort((a, b) => String(a.at).localeCompare(String(b.at))).slice(-300);
+  saveSettings();
+}
+
+/** 구조 검토: MIDAS 해석 결과표(텍스트·엑셀) 선택 → 검토 실행 */
 async function pickStage4(jobId) {
   const r = await dialog.showOpenDialog(mainWindow, {
     title: 'MIDAS GEN 해석 결과표(Beam Force 텍스트·엑셀) 선택',
@@ -227,20 +273,33 @@ function registerIpc() {
   ipcMain.handle('stage4-apply', (_e, id) => engine.applyStage4(id));
   ipcMain.handle('open-path', (_e, p) => shell.openPath(p));
   ipcMain.handle('show-in-folder', (_e, p) => shell.showItemInFolder(p));
-  // 피드백: jobId 가 있으면 작업 카드(원본·결과 첨부), 없으면 도면 작업 없이 보내는 피드백(scope=general, 첨부 없음 → 보낸 내역을 settings 에 보관)
+  // 피드백: jobId 가 있으면 작업 결과 화면의 피드백(원본·결과 첨부), 없으면 작업 없이 보내는 피드백(scope=general, 첨부 없음). 보낸 것은 모두 피드백 로그에 남김
   ipcMain.handle('send-feedback', async (_e, { text, scope, category, jobId }) => {
     const job = jobId == null ? null : engine.job(jobId);
     const r = await require('./lib/feedback.cjs').send({
       root: ROOT, engine, bundledApp: path.join(BUNDLED, 'app'), appVersion: app.getVersion(), text, scope, category, job, log,
       onProgress: (p) => send('feedback-progress', { jobId, ...p }),
     });
-    if (!job && r.sent) {
-      settings.feedbackHistory = [...(settings.feedbackHistory || []), { at: new Date().toISOString(), text: String(text).slice(0, 500), category: category || 'unknown', id: r.id, file: r.file }].slice(-30);
-      saveSettings();
+    if (r.sent && r.ok) {
+      addFeedbackLog({
+        at: new Date().toISOString(), source: job ? 'job' : 'general', title: job ? job.name : firstSentence(text),
+        kind: job ? (scope === 'file' ? 'file' : 'rule') : category === 'ui' ? 'ui' : 'rule', text: String(text).slice(0, 2000), id: r.id, file: r.file,
+      });
     }
     return r;
   });
-  ipcMain.handle('feedback-history', () => settings.feedbackHistory || []);
+  ipcMain.handle('skip-feedback', (_e, id) => skipFeedback(id));
+  ipcMain.handle('set-draft', (_e, id, draft) => engine.setDraft(id, draft));
+  ipcMain.handle('feedback-log', () => settings.feedbackLog || []);
+  ipcMain.handle('get-side-width', () => settings.sideWidth || 255);
+  ipcMain.handle('set-side-width', (_e, w) => {
+    const n = Math.round(Number(w));
+    if (Number.isFinite(n)) {
+      settings.sideWidth = Math.min(340, Math.max(170, n)); // 왼쪽 목록 폭: 최소 170 · 기본 255 · 최대 340
+      saveSettings();
+    }
+    return settings.sideWidth || 255;
+  });
   ipcMain.handle('get-settings', () => engine.getSettings());
   ipcMain.handle('set-settings', (_e, vals) => engine.setSettings(vals || {}));
   ipcMain.handle('open-data-folder', () => shell.openPath(ROOT));
@@ -284,6 +343,7 @@ app.whenReady().then(() => {
     onStatus: (s) => send('update-status', s),
     isWindowVisible: () => Boolean(mainWindow && mainWindow.isVisible() && !mainWindow.isMinimized()),
   });
+  migrateFeedbackLog();
   registerIpc();
   createWindow();
   createTray();
@@ -299,6 +359,7 @@ app.whenReady().then(() => {
     updater.start();
     setTimeout(() => {
       for (const j of engine.pendingErrorReports()) reportError(j); // 지난 실행에서 못 보낸 오류 보고 재시도
+      for (const j of engine.pendingSamples()) sendSample(j); // 못 보낸 문제 없음 표본 재시도
     }, 15000);
     const files = fileArgs(process.argv);
     if (files.length) engine.enqueue(files.slice(0, 1));

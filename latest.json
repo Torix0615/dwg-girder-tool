@@ -1,6 +1,22 @@
 {
  "notes": [
   {
+   "version": "1.7.0",
+   "date": "2026-11-12",
+   "items": [
+    "화면 구성 변경: 제목 줄 아래에 버튼 줄 [+ 골조 모델링] [+ 구조 검토] [피드백] … 오른쪽 끝 [피드백 로그]. 왼쪽은 작업 목록만, 오른쪽은 고른 작업의 결과 화면. 작업이 없을 때의 첫 화면은 없앰",
+    "이름 변경: 1·2·3단계 작업 = \"골조 모델링\", 4단계 작업 = \"구조 검토\". [작업 시작] → [+ 골조 모델링], [4단계 구조 검토 (MGT)] → [+ 구조 검토]",
+    "왼쪽 작업 목록에 날짜·시간 표시, 상태 글 변경: 모델링 완료 / 검토 완료 · OK n / NG m / 모델링 실패·검토 실패(빨강 = 파일 문제) / 모델링 에러·검토 에러(노랑 = 프로그램 오류, 자동 보고됨)",
+    "왼쪽 목록과 오른쪽 화면 사이의 줄을 끌어 목록 폭 조절(170~340, 기본 255). 다음 실행에도 유지",
+    "골조 모델링 결과 화면에서 구조 검토 안내와 시작 버튼 제거(구조 검토는 수작업 뒤 [+ 구조 검토] 로 따로 시작)",
+    "작업 결과 화면 아래 \"피드백\" 변경: 종류 [공통 규칙] [이 파일에만 해당] 을 먼저 고르고 내용 입력. 내용을 적으면 [전송하기] 가 켜짐. 쓰던 내용은 작업마다 저장되어 다른 화면에 다녀와도 남음",
+    "[건너뛰기] 추가: 결과에 문제가 없어 피드백이 필요 없을 때 누르면 그 작업이 \"문제 없음\" 으로 표시됨(되돌릴 수 없음. 구조 검토 작업은 검토가 끝난 뒤에 나옴)",
+    "[피드백]: 작업 없이 보내는 피드백 화면. 종류 [공통 규칙] [프로그램 화면·기능]. 쓰는 도중 다른 곳을 누르면 \"작성 중이던 피드백이 삭제됩니다\" 확인 팝업",
+    "[피드백 로그]: 지금까지 보낸 피드백을 왼쪽 목록에 날짜·시간과 제목(파일 이름 또는 첫 문장)으로 표시, 누르면 오른쪽에 내용 표시. 다시 누르면 작업 목록으로 돌아감",
+    "설정(⚙): \"골조 모델링 실행 범위\" 를 [1단계까지] [2단계까지] [3단계까지] 선택 막대로 변경, [기본값으로] 는 확인 팝업 뒤에 적용"
+   ]
+  },
+  {
    "version": "1.6.1",
    "date": "2026-11-11",
    "items": [
@@ -158,12 +174,12 @@
    ]
   }
  ],
- "app_version": "1.6.1",
- "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.6.1/app.zip",
+ "app_version": "1.7.0",
+ "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.7.0/app.zip",
  "runtime_version": "1",
  "runtime_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/runtime-v1/runtime.zip",
- "shell_version": "1.6.1",
- "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.6.1/GirderTool-Setup-1.6.1.exe",
- "shell_sha256": "5a9571b6da579ff7bfc32fe3c674f663e58a018fd876615193e9229a3c79165d",
- "shell_size": 145836728
+ "shell_version": "1.7.0",
+ "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.7.0/GirderTool-Setup-1.7.0.exe",
+ "shell_sha256": "6ca529858bbf2a3f26831d45eb499f2ea4b6f0bd45ec39cbee0f3c28600ae687",
+ "shell_size": 145840978
 }
