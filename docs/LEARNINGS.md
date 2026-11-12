@@ -105,3 +105,8 @@
 - 화면 검증은 실제 데이터·실제 서버를 건드리지 않게 했다: `GIRDER_TEST_ROOT`(개발 실행 전용, main.js) 로 userData 를 격리 폴더로 돌리고(app 복사 + runtime 정션), `feedback_server.txt` 를 로컬 가짜 서버(메타만 기록)로 바꾼 뒤 CDP 로 실제 클릭·입력·끌기(Input.dispatchMouseEvent)를 넣어 90여 항목을 확인. 정션이 든 폴더는 지우기 전에 `rmdir` 로 정션부터 뗀다.
 - 시험 자료 짝(모델 ↔ 결과표, 요소표 ↔ 모델)을 두 번 잘못 맞췄다. 프로그램이 "요소 번호가 하나도 맞지 않음"으로 거부해 드러났지만, 시험 스크립트 인자는 파일 이름으로 짝을 확인하고 넣는다(y_s2h 결과표 = 답변5 어린이집 128요소).
 - [건너뛰기]는 실패한 작업과 검토 전 구조 검토 작업에는 두지 않았다("문제 없음" 표본에 실패·미완 작업이 섞이면 기준 자료가 오염됨). 다시 검토하면 표시를 지운다.
+
+## 2026-11-12 밤 (v1.7.0 배포)
+- 캔버스 합의에 없던 것(표본 파일 전송, [건너뛰기]가 나오지 않는 경우, 확인 팝업)은 배포 전 보고에 따로 적어 알린 뒤 "알아서 배포" 답을 받고 배포했다. 합의본과 다르게 구현한 곳은 배포 전에 드러낸다.
+- 배포: `release.py 1.7.0 --notes-file=dist_build/out/notes_1.7.0.txt --shell` 를 백그라운드로 실행(로그 `dist_build/out/release_1.7.0.log`, 약 10분 — 대부분 electron-builder 빌드와 설치본 146MB 업로드). 확인 4가지 = Release app-v1.7.0 자산 3개(app.zip·Setup·README), raw latest.json 의 app_version·shell_version 1.7.0, 로컬 설치본 sha256 = latest.json shell_sha256, `HEAD == origin/main`(9a04614).
+- 다음 후보(미착수): `Beam Force.xls`(OLE2) 직접 읽기, `.OUT` 첨부를 오류 보고 대신 안내로, 미판정 피드백 5건 판정, 전문가 확인(WG 제외·실제 CSV/txt 파일·"MGT 만으로는 검토 불가" 답).
