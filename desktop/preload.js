@@ -1,13 +1,16 @@
 'use strict';
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
-const CHANNELS = ['engine-state', 'update-status', 'install-progress', 'feedback-progress', 'open-feedback'];
+const CHANNELS = ['engine-state', 'update-status', 'install-progress', 'feedback-progress', 'open-feedback', 'open-review'];
 
 contextBridge.exposeInMainWorld('girder', {
   pathOf: (file) => webUtils.getPathForFile(file),
   startJob: () => ipcRenderer.invoke('start-job'),
   startStage4: () => ipcRenderer.invoke('start-stage4'),
   run: (paths) => ipcRenderer.invoke('run', paths),
+  describeFiles: (paths) => ipcRenderer.invoke('describe-files', paths),
+  reviewPick: (want) => ipcRenderer.invoke('review-pick', want),
+  reviewStart: (model, table) => ipcRenderer.invoke('review-start', model, table),
   cancel: () => ipcRenderer.invoke('cancel'),
   removeJob: (id) => ipcRenderer.invoke('remove-job', id),
   engineState: () => ipcRenderer.invoke('engine-state'),

@@ -76,6 +76,12 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
         if (j.elements && !fs.existsSync(j.elements)) j.elements = null;
         if (j.stage4) {
           if (j.stage4.state === 'running') {
+            if (j.kind === 's4') {
+              // 구조 검토 작업: 실패로 남기지 않고 결과표를 다시 넣기를 기다린다
+              j.tableNote = { name: j.stage4.resultName || '', text: '검토하던 중에 프로그램이 꺼졌습니다. 결과표를 다시 넣어 주세요.', at: Date.now() };
+              j.stage4 = null;
+              continue;
+            }
             j.stage4.state = 'failed';
             j.stage4.failReason = '이전 실행이 중단됨';
             j.stage4.failKind = 'input';
@@ -240,18 +246,59 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     }
   }
 
-  function enqueue(paths) {
+  /** 파일 종류를 확장자가 아니라 내용으로 가린다(1.8.0): 'drawing'(도면) | 'model'(MIDAS 모델 MGT) | 'table'(해석 결과표로 넣은 파일) | null(없는 파일).
+   *  모델과 결과표를 어느 칸에 넣든, 함께 끌어 놓든 알아서 나누기 위한 것 — 결과표가 맞는지는 검토 스크립트가 판단한다 */
+  function sniff(p) {
+    let head;
+    try {
+      if (!fs.statSync(p).isFile()) return null;
+      const fd = fs.openSync(p, 'r');
+      const b = Buffer.alloc(65536);
+      const n = fs.readSync(fd, b, 0, b.length, 0);
+      fs.closeSync(fd);
+      head = b.subarray(0, n);
+    } catch {
+      return null;
+    }
+    const ext = path.extname(p).toLowerCase();
+    if (EXT.includes(ext)) return 'drawing';
+    if (head.length >= 4 && (head.readUInt32LE(0) === 0xe011cfd0 || head.readUInt32LE(0) === 0x04034b50)) return 'table'; // 엑셀 .xls(OLE2)·.xlsx(zip)
+    if (/^\s*\*(VERSION|UNIT|NODE|ELEMENT)\b/m.test(head.toString('latin1').toUpperCase())) return 'model';
+    return ext === MGT_EXT ? 'model' : 'table';
+  }
+
+  /** 넣은 파일 목록 → [{path, name, kind, mtime}] (없는 파일은 뺌) */
+  function describe(paths) {
+    const out = [];
+    for (const p of paths || []) {
+      const kind = p ? sniff(p) : null;
+      if (kind) out.push({ path: p, name: path.basename(p), kind, mtime: fs.statSync(p).mtimeMs });
+    }
+    return out;
+  }
+
+  /** 구조 검토 시작: 모델(필수) + 결과표(있으면 모델을 읽은 뒤 곧바로 검토) */
+  function startReview(modelPath, tablePath) {
+    if (sniff(modelPath) !== 'model') return { ok: false, message: 'MIDAS 모델(.mgt) 파일이 아닙니다' };
+    const id = enqueue([modelPath], { table: tablePath && sniff(tablePath) ? tablePath : null });
+    return id ? { ok: true, id } : { ok: false, message: '같은 모델을 이미 읽고 있습니다' };
+  }
+
+  function enqueue(paths, opts = {}) {
     let added = null;
     for (const p of paths || []) {
-      const ext = p ? path.extname(p).toLowerCase() : '';
-      const s4 = ext === MGT_EXT; // .mgt = 4단계 단독 작업(모델 읽기 → 결과표 첨부 → 검토)
-      if (!p || (!s4 && !EXT.includes(ext))) continue;
-      if (!fs.existsSync(p)) continue;
+      const kind = p ? sniff(p) : null;
+      const s4 = kind === 'model'; // MIDAS 모델 = 구조 검토 작업(모델 읽기 → 결과표 → 검토)
+      if (!s4 && kind !== 'drawing') continue;
       if (jobs.some((j) => j.src === p && (j.state === 'queued' || j.state === 'running'))) continue;
       const id = ++seq;
       const base = path.basename(p, path.extname(p));
       const job = { id, src: p, name: path.basename(p), state: 'queued', step: '', stepIdx: 0, total: 0, created: Date.now(), started: 0, ended: 0, outdir: path.join(RESULTS, `${id}_${base}`), result: null, report: null, message: '', feedback: null, log: [] };
-      if (s4) job.kind = 's4';
+      if (s4) {
+        job.kind = 's4';
+        job.srcMtime = fs.statSync(p).mtimeMs;
+        if (opts.table) job.pendingTable = opts.table; // 함께 넣은 결과표: 모델을 다 읽으면 바로 검토
+      }
       jobs.push(job);
       added = id;
     }
@@ -311,9 +358,19 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
       log(`${j.state}: ${j.name} ${j.message}`);
       proc = null;
       current = null;
+      const table = j.pendingTable;
+      delete j.pendingTable;
       saveJobs();
       emit();
       if (j.state === 'failed' && j.failKind === 'error' && onError) onError(j);
+      if (j.state === 'done' && table) {
+        const r = runStage4(j.id, table);
+        if (!r.ok) {
+          j.tableNote = { name: path.basename(table), text: r.message, at: Date.now() };
+          saveJobs();
+          emit();
+        }
+      }
       next();
     };
     try {
@@ -501,15 +558,22 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     if (!j.mgt || !j.elements || !fs.existsSync(j.elements)) return { ok: false, message: '모델 MGT·요소 대응표가 없습니다 — 모델을 다시 선택해 주세요' };
     if (proc4) return { ok: false, message: '다른 검토가 진행 중입니다' };
     if (!txtPath || !fs.existsSync(txtPath)) return { ok: false, message: '결과표 파일이 없습니다' };
-    if (j.feedback && j.feedback.skipped) j.feedback = null; // 다시 검토하면 결과가 달라지므로 "문제 없음" 표시는 지움(새 결과로 다시 판단)
-    const dir = path.join(j.outdir, 'stage4');
+    if (sniff(txtPath) === 'model') return { ok: false, message: '넣은 파일은 MIDAS 모델(.mgt)입니다. 여기에는 해석 결과표(Beam Force)를 넣어 주세요' };
+    // 새 폴더(stage4_new)에서 검토하고 끝난 뒤에 바꿔 넣는다 — 결과표가 아닌 파일을 넣어도 앞서 끝낸 검토 결과가 지워지지 않게(1.8.0)
+    const final = path.join(j.outdir, 'stage4');
+    const dir = path.join(j.outdir, 'stage4_new');
+    const prev = j.stage4 && j.stage4.state === 'done' ? j.stage4 : null;
+    const prevFb = j.feedback;
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
     const base = path.basename(j.src, path.extname(j.src));
     const ext = path.extname(txtPath) || '.txt';
-    const txt = path.join(dir, j.kind === 's4' ? `${base}_결과표${ext}` : `${base}_MIDAS_결과${ext}`);
+    const txtName = j.kind === 's4' ? `${base}_결과표${ext}` : `${base}_MIDAS_결과${ext}`;
+    const txt = path.join(dir, txtName);
     fs.copyFileSync(txtPath, txt);
-    j.stage4 = { state: 'running', started: Date.now(), ended: 0, resultTxt: txt, resultName: path.basename(txtPath), step: '검토 시작', stepIdx: 0, total: S4_STEPS, tail: [], summary: null, xlsx: null, check: null, mgt2: null, applied: null, errorReport: null };
+    if (j.feedback && j.feedback.skipped) j.feedback = null; // 다시 검토하면 결과가 달라지므로 "문제 없음" 표시는 지움(새 결과로 다시 판단)
+    delete j.tableNote;
+    j.stage4 = { state: 'running', started: Date.now(), ended: 0, resultTxt: txt, resultName: path.basename(txtPath), tableSrc: txtPath, tableMtime: fs.statSync(txtPath).mtimeMs, step: '검토 시작', stepIdx: 0, total: S4_STEPS, tail: [], summary: null, xlsx: null, check: null, mgt2: null, applied: null, errorReport: null };
     saveJobs();
     emit();
     log(`4단계 검토: ${j.name} ← ${txtPath}`);
@@ -549,12 +613,10 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     proc4.on('close', (code) => {
       proc4 = null;
       s.ended = Date.now();
-      const xlsx = path.join(dir, 'check.xlsx');
-      const check = path.join(dir, 'check.json');
-      if (code === 0 && fs.existsSync(xlsx) && fs.existsSync(check) && s.summary) {
+      const ok = code === 0 && fs.existsSync(path.join(dir, 'check.xlsx')) && fs.existsSync(path.join(dir, 'check.json')) && s.summary;
+      let report = null; // 자동 오류 보고에 쓸 작업 정보
+      if (ok) {
         s.state = 'done';
-        s.xlsx = xlsx;
-        s.check = check;
         s.step = '완료';
         s.message = `검토 완료 (${Math.round((s.ended - s.started) / 1000)}초) — OK ${s.summary.ok} / NG ${s.summary.ng}${s.summary.none ? ` / 결과 없음 ${s.summary.none}` : ''}`;
       } else {
@@ -562,19 +624,58 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
         const lines = err.trim().split('\n').filter((l) => l.trim());
         const last = lines.slice(-1)[0] || `종료 코드 ${code}`;
         s.failReason = /^SystemExit: /.test(last) ? last.slice(12) : last;
-        // 설정 오류는 사용자가 고칠 것(입력), 그 외(결과표 형식 미인식 포함)는 프로그램 쪽에서 봐야 하므로 자동 오류 보고(첨부: 결과표)
-        s.failKind = /설정 오류|입력 오류/.test(s.failReason) ? 'input' : 'error'; // 입력 오류 = 사용자가 고칠 것(모델 MGT 를 결과표로 첨부 등), 자동 보고 안 함
+        // 입력 오류·설정 오류 = 사용자가 고칠 것. 머리글을 못 찾은 파일 = 결과표가 아닌 파일(해석 기록 .OUT 등)이거나 아직 모르는 표 형식
+        const notTable = /머리글을 찾지 못함/.test(s.failReason);
+        s.failKind = /설정 오류|입력 오류/.test(s.failReason) || notTable ? 'input' : 'error';
         s.message = `검토 실패: ${s.failReason}`;
         try {
           fs.writeFileSync(path.join(dir, 'check_error.txt'), err);
         } catch {
           /* */
         }
+        if (s.failKind === 'input' && j.kind === 's4') {
+          // 넣은 파일 문제는 검토 실패로 남기지 않는다: 결과표 칸에 이유만 적고 다시 넣기를 기다린다(앞서 끝낸 검토 결과·"문제 없음" 표시는 그대로).
+          // 결과표가 아닌 것으로 본 파일은 모르는 표 형식일 수 있어 그 파일을 붙여 자동 보고만 조용히 보낸다.
+          const rej = path.join(j.outdir, 'stage4_rejected');
+          try {
+            fs.rmSync(rej, { recursive: true, force: true });
+            fs.renameSync(dir, rej);
+          } catch {
+            /* */
+          }
+          const why = notTable ? '이 파일에서 Beam Force 표를 찾지 못했습니다. MIDAS 의 Results → Result Tables → Beam → Force 표에서 Export to Excel 로 저장한 파일을 넣어 주세요.' : String(s.failReason).replace(/^(입력|설정) 오류:\s*/, '');
+          j.tableNote = { name: s.resultName, text: why, at: s.ended, settings: /설정 오류/.test(s.failReason) };
+          if (notTable) report = { ...j, stage4: { ...s, resultTxt: path.join(rej, txtName) } };
+          j.stage4 = prev;
+          j.feedback = prevFb;
+          log(`4단계 결과표 다시 넣기 대기: ${j.name} ${s.message}`);
+          saveJobs();
+          emit();
+          if (report && onError) onError(report, 'stage4');
+          return;
+        }
+        if (s.failKind === 'error') report = j;
+      }
+      // 검토를 마쳤거나 프로그램 오류: 새 폴더를 stage4 로 바꿔 넣는다
+      try {
+        fs.rmSync(final, { recursive: true, force: true });
+        fs.renameSync(dir, final);
+        s.resultTxt = path.join(final, txtName);
+        if (ok) {
+          s.xlsx = path.join(final, 'check.xlsx');
+          s.check = path.join(final, 'check.json');
+        }
+      } catch (e) {
+        log('4단계 결과 폴더 교체 실패', e);
+        if (ok) {
+          s.xlsx = path.join(dir, 'check.xlsx');
+          s.check = path.join(dir, 'check.json');
+        }
       }
       log(`4단계 ${s.state}: ${j.name} ${s.message}`);
       saveJobs();
       emit();
-      if (s.state === 'failed' && s.failKind === 'error' && onError) onError(j, 'stage4');
+      if (report && onError) onError(report, 'stage4');
     });
     return { ok: true, message: '검토 시작' };
   }
@@ -620,7 +721,7 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     return jobs.filter((j) => j.state === 'done' && j.feedback && j.feedback.skipped && !(j.feedback.sample && j.feedback.sample.sent));
   }
 
-  return { enqueue, cancel, remove, setFeedback, setDraft, setErrorReport, pendingErrorReports, pendingSamples, state, versions, ensureInstalled, ensureConfig, getSettings, setSettings, runStage4, applyStage4, stage4Busy, isIdle: () => !current && !proc4, job: (id) => jobs.find((j) => j.id === id) || null, paths: { APP, RT, CFG, PY, RESULTS }, EXT, MGT_EXT };
+  return { enqueue, describe, startReview, cancel, remove, setFeedback, setDraft, setErrorReport, pendingErrorReports, pendingSamples, state, versions, ensureInstalled, ensureConfig, getSettings, setSettings, runStage4, applyStage4, stage4Busy, isIdle: () => !current && !proc4, job: (id) => jobs.find((j) => j.id === id) || null, paths: { APP, RT, CFG, PY, RESULTS }, EXT, MGT_EXT };
 }
 
 module.exports = { createEngine, cmpVer, readText, swapDir };

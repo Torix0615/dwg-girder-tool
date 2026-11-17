@@ -1,6 +1,17 @@
 {
  "notes": [
   {
+   "version": "1.8.0",
+   "date": "2026-11-17",
+   "items": [
+    "구조 검토: [+ 구조 검토] 를 누르면 [MIDAS 모델]·[해석 결과표 (Beam Force)] 두 칸이 나옴. [파일 선택] 창에서 두 파일을 함께 고르거나 두 파일을 창에 함께 끌어다 놓으면 모델을 읽고 곧바로 검토(파일 종류는 자동으로 구분)",
+    "구조 검토: MIDAS 결과 테이블의 Export to Excel 로 저장한 엑셀(.xls) 파일을 그대로 읽음. .xlsx 로 다시 저장할 필요 없음",
+    "구조 검토: 결과표가 아닌 파일을 넣어도 \"검토 실패\" 가 되지 않음. 결과표 칸에 이유가 표시되고 목록은 \"결과표 넣기 대기\" 로 남으며, 앞서 끝낸 검토 결과는 그대로 유지. 맞는 파일을 다시 넣으면 검토",
+    "구조 검토: 결과표만 먼저 넣으면 칸에 두었다가 모델을 넣을 때 함께 검토. 확장자가 달라도 파일 내용으로 모델·결과표를 구분",
+    "구조 검토: 검토가 끝난 화면의 [다른 결과표로 다시 검토] 버튼 이름을 [다른 파일로 검토] 로 변경(모델과 결과표를 함께 골라 새로 검토할 수도 있음)"
+   ]
+  },
+  {
    "version": "1.7.0",
    "date": "2026-11-12",
    "items": [
@@ -174,12 +185,12 @@
    ]
   }
  ],
- "app_version": "1.7.0",
- "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.7.0/app.zip",
+ "app_version": "1.8.0",
+ "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.8.0/app.zip",
  "runtime_version": "1",
  "runtime_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/runtime-v1/runtime.zip",
- "shell_version": "1.7.0",
- "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.7.0/GirderTool-Setup-1.7.0.exe",
- "shell_sha256": "6ca529858bbf2a3f26831d45eb499f2ea4b6f0bd45ec39cbee0f3c28600ae687",
- "shell_size": 145840978
+ "shell_version": "1.8.0",
+ "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.8.0/GirderTool-Setup-1.8.0.exe",
+ "shell_sha256": "163c4a2475847cf6bb6fbbe309f45a01a84f1b96124898b51336fac915ce3425",
+ "shell_size": 145846042
 }

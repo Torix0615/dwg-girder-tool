@@ -165,12 +165,25 @@ async function startJob() {
   return engine.enqueue(r.filePaths.slice(0, 1));
 }
 
-/** 구조 검토(4단계) 시작: 수작업을 마친 MIDAS 모델(.mgt) 1개 선택 → 모델 읽기 작업(골조 모델링 없이 단독) */
-async function startStage4() {
+/** 구조 검토 시작(트레이 메뉴): 창을 띄우고 파일 두 개(MIDAS 모델·해석 결과표)를 넣는 화면을 연다 */
+function startStage4() {
   showWindow();
-  const r = await dialog.showOpenDialog(mainWindow, { title: '구조 검토 — MIDAS GEN 모델(.mgt) 선택', filters: [{ name: 'MIDAS Gen MGT', extensions: ['mgt'] }], properties: ['openFile'] });
-  if (r.canceled || !r.filePaths.length) return null;
-  return engine.enqueue(r.filePaths.slice(0, 1));
+  send('open-review', {});
+  return null;
+}
+
+/** 구조 검토 파일 선택: 한 창에서 모델(.mgt)과 결과표(.xls 등)를 함께 고를 수 있다. 종류는 파일 내용으로 가린다 → [{path, name, kind, mtime}] */
+const REVIEW_TABLE_EXT = ['xls', 'xlsx', 'txt', 'csv', 'tsv', 'dat', 'prn'];
+async function pickReview(want) {
+  const both = { name: 'MIDAS 모델·해석 결과표', extensions: ['mgt', ...REVIEW_TABLE_EXT] };
+  const one = want === 'table' ? { name: '해석 결과표 (엑셀·텍스트)', extensions: REVIEW_TABLE_EXT } : { name: 'MIDAS 모델 (MGT)', extensions: ['mgt'] };
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: want === 'table' ? '구조 검토 — 해석 결과표(Beam Force) 선택' : '구조 검토 — MIDAS 모델(.mgt)과 해석 결과표 선택 (두 파일을 함께 고를 수 있습니다)',
+    filters: want === 'table' ? [one, both, { name: '모든 파일', extensions: ['*'] }] : [both, one, { name: '모든 파일', extensions: ['*'] }],
+    properties: ['openFile', 'multiSelections'],
+  });
+  if (r.canceled || !r.filePaths.length) return [];
+  return engine.describe(r.filePaths);
 }
 
 /** 다운로드: 최종 DXF 만 사용자가 고른 위치에 저장 */
@@ -253,7 +266,7 @@ function migrateFeedbackLog() {
 async function pickStage4(jobId) {
   const r = await dialog.showOpenDialog(mainWindow, {
     title: 'MIDAS GEN 해석 결과표(Beam Force 텍스트·엑셀) 선택',
-    filters: [{ name: '결과표 (텍스트·엑셀)', extensions: ['txt', 'csv', 'tsv', 'dat', 'out', 'prn', 'xlsx'] }, { name: '모든 파일', extensions: ['*'] }],
+    filters: [{ name: '결과표 (엑셀·텍스트)', extensions: REVIEW_TABLE_EXT }, { name: '모든 파일', extensions: ['*'] }],
     properties: ['openFile'],
   });
   if (r.canceled || !r.filePaths.length) return { ok: false, message: '' };
@@ -263,6 +276,9 @@ async function pickStage4(jobId) {
 function registerIpc() {
   ipcMain.handle('start-job', () => startJob());
   ipcMain.handle('start-stage4', () => startStage4());
+  ipcMain.handle('describe-files', (_e, paths) => engine.describe((paths || []).slice(0, 8)));
+  ipcMain.handle('review-pick', (_e, want) => pickReview(want));
+  ipcMain.handle('review-start', (_e, model, table) => engine.startReview(model, table));
   ipcMain.handle('run', (_e, paths) => engine.enqueue((paths || []).slice(0, 1)));
   ipcMain.handle('cancel', () => engine.cancel());
   ipcMain.handle('remove-job', (_e, id) => engine.remove(id));

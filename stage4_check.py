@@ -1,7 +1,7 @@
 """4단계: MIDAS Gen 해석 결과표(Beam Force 텍스트)로 기둥·거더·보 단면을 KDS 14 20 강도설계법으로 검토하고 NG 부재는 철근→폭→춤 순으로 추천(피드백 1d7f01, 전문가 답변 11-09).
-python stage4_check.py <요소대응표 _MIDAS_elements.json> <MIDAS 결과표 .txt|.csv|.xlsx> <출력폴더> [--config config.json]
+python stage4_check.py <요소대응표 _MIDAS_elements.json> <MIDAS 결과표 .xls|.xlsx|.txt|.csv> <출력폴더> [--config config.json]
 출력: <출력폴더>/check.json(요소별 검토·추천, stage4_apply 입력) + check.xlsx(검토결과·요약·하중 시트). 표준 출력 마지막 줄 SUMMARY=<json>.
-입력 결과표: MIDAS Gen 결과 테이블(Beam Force) 을 텍스트/CSV 또는 엑셀(.xlsx, 머리글이 있는 첫 시트)로 내보낸 파일. 구형 .xls 는 입력 오류로 안내. 열 = Elem, Load, Part, Axial, Shear-y, Shear-z, Torsion, Moment-y, Moment-z (한글 머리글도 인식).
+입력 결과표: MIDAS Gen 결과 테이블(Beam Force) 을 엑셀(.xls·.xlsx, 머리글이 있는 첫 시트) 또는 텍스트/CSV 로 내보낸 파일. 종류는 확장자가 아니라 파일 내용으로 가린다(MIDAS 의 Export to Excel = .xls). 열 = Elem, Load, Part, Axial, Shear-y, Shear-z, Torsion, Moment-y, Moment-z (한글 머리글도 인식).
   단위는 머리글 괄호(kN, kN*m, kN*mm, N, tonf…)에서 읽고(설정 검토_결과_단위=auto), 없으면 MGT 와 같은 kN·mm 로 본다.
   Load 열이 개별 하중케이스(D/L 계열 이름)뿐이면 설정 검토_하중조합(기본 1.4D; 1.2D+1.6L)으로 조합을 만들고, 조합 이름이 있으면 그대로 쓴다.
 검토 규칙(요약):
@@ -195,7 +195,7 @@ def xlsx_sheets(path):
     names = z.namelist()
     sheets = sorted((n for n in names if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", n)), key=lambda n: int(re.search(r"(\d+)\.xml$", n).group(1)))
     if not sheets:
-        raise SystemExit("입력 오류: 엑셀 통합 문서(.xlsx)가 아닙니다 — 결과표를 텍스트(.txt)·CSV·엑셀(.xlsx) 중 하나로 저장해 첨부해 주세요")
+        raise SystemExit("입력 오류: 엑셀 통합 문서(.xlsx)가 아닙니다 — MIDAS 결과 테이블(Beam Force)을 Export to Excel 로 내보낸 파일을 넣어 주세요")
     shared = []
     if "xl/sharedStrings.xml" in names:
         for _ev, el in ET.iterparse(z.open("xl/sharedStrings.xml")):
@@ -236,6 +236,173 @@ def xlsx_sheets(path):
     return out
 
 
+def xls_sheets(raw):
+    """구형 엑셀(.xls = OLE2 묶음 안의 BIFF8 Workbook 스트림)을 표준 라이브러리로 읽어 시트별 줄 목록을 돌려준다(1.8.0).
+    MIDAS Gen 결과 테이블의 'Export to Excel' 은 .xls 한 가지로만 저장한다. 문자열(공유 문자열 SST·LABEL)과 숫자(NUMBER·RK·MULRK·수식 결과)만 읽는다."""
+    import struct
+    BAD = "입력 오류: 엑셀(.xls) 파일을 읽을 수 없습니다(손상되었거나 암호가 걸린 파일) — MIDAS 에서 결과표를 다시 내보내 넣어 주세요"
+    END = 0xFFFFFFFE
+    try:
+        ssz = 1 << struct.unpack_from("<H", raw, 30)[0]
+        mssz = 1 << struct.unpack_from("<H", raw, 32)[0]
+        nfat, dir0, _, mini_cut, mfat0, _n, difat0, ndifat = struct.unpack_from("<8I", raw, 44)
+        n_sec = max(0, (len(raw) - 512) // ssz) + 1
+
+        def sec(i):
+            return raw[512 + i * ssz: 512 + (i + 1) * ssz]
+
+        difat = list(struct.unpack_from("<109I", raw, 76))
+        s = difat0; guard = 0
+        while s < END and guard < n_sec:
+            vals = struct.unpack("<%dI" % (ssz // 4), sec(s))
+            difat += vals[:-1]; s = vals[-1]; guard += 1
+        fat = []
+        for s in difat[:nfat]:
+            if s < END:
+                fat += struct.unpack("<%dI" % (ssz // 4), sec(s))
+
+        def chain(s):
+            out = []; guard = 0
+            while s < END and s < len(fat) and guard <= n_sec:
+                out.append(sec(s)); s = fat[s]; guard += 1
+            return b"".join(out)
+
+        d = chain(dir0)
+        ents = []
+        for i in range(0, len(d) - 127, 128):
+            e = d[i:i + 128]
+            nlen = struct.unpack_from("<H", e, 64)[0]
+            if nlen < 2 or nlen > 64:
+                continue
+            ents.append((e[:nlen - 2].decode("utf-16le", "replace"), e[66], struct.unpack_from("<I", e, 116)[0], struct.unpack_from("<I", e, 120)[0]))
+        ent = next((x for x in ents if x[1] == 2 and x[0] in ("Workbook", "Book")), None)
+        if ent is None:
+            raise SystemExit("입력 오류: 엑셀(.xls) 파일 안에 표가 없습니다 — MIDAS 결과 테이블(Beam Force)을 Export to Excel 로 내보낸 파일을 넣어 주세요")
+        if ent[3] < mini_cut:  # 작은 스트림은 뿌리 항목의 미니 스트림 안에 있다
+            root = next(x for x in ents if x[1] == 5)
+            mini = chain(root[2]); mfat = []
+            s = mfat0; guard = 0
+            while s < END and s < len(fat) and guard <= n_sec:
+                mfat += struct.unpack("<%dI" % (ssz // 4), sec(s)); s = fat[s]; guard += 1
+            out = []; s = ent[2]; guard = 0
+            while s < END and s < len(mfat) and guard <= len(mfat):
+                out.append(mini[s * mssz:(s + 1) * mssz]); s = mfat[s]; guard += 1
+            wb = b"".join(out)[:ent[3]]
+        else:
+            wb = chain(ent[2])[:ent[3]]
+
+        recs = []; p = 0
+        while p + 4 <= len(wb):
+            rt, ln = struct.unpack_from("<HH", wb, p)
+            recs.append((rt, wb[p + 4:p + 4 + ln])); p += 4 + ln
+        if not recs or recs[0][0] != 0x0809:
+            raise SystemExit(BAD)
+        if struct.unpack_from("<H", recs[0][1], 0)[0] != 0x0600:
+            raise SystemExit("입력 오류: 아주 오래된 형식의 엑셀(.xls, Excel 95 이전) 파일입니다 — MIDAS 에서 결과표를 다시 내보내 넣어 주세요")
+        if any(rt == 0x002F for rt, _ in recs[:40]):
+            raise SystemExit("입력 오류: 암호가 걸린 엑셀(.xls) 파일은 읽지 못합니다 — 암호를 풀어 다시 저장해 넣어 주세요")
+
+        def read_sst(chunks):
+            """공유 문자열 표. 문자열이 레코드 경계(CONTINUE)를 넘으면 이어지는 조각의 첫 바이트가 다시 글자 폭 플래그"""
+            ci = 0; buf = chunks[0]; q = 8
+            uniq = struct.unpack_from("<I", buf, 4)[0]
+            out = []
+            for _ in range(uniq):
+                while q >= len(buf):
+                    ci += 1
+                    if ci >= len(chunks):
+                        return out
+                    buf = chunks[ci]; q = 0
+                cch = struct.unpack_from("<H", buf, q)[0]; fl = buf[q + 2]; q += 3
+                rt = ext = 0
+                if fl & 8:
+                    rt = struct.unpack_from("<H", buf, q)[0]; q += 2
+                if fl & 4:
+                    ext = struct.unpack_from("<I", buf, q)[0]; q += 4
+                wide = fl & 1; parts = []; left = cch
+                while left > 0:
+                    if q >= len(buf):
+                        ci += 1; buf = chunks[ci]; wide = buf[0] & 1; q = 1
+                    n = min(left, (len(buf) - q) // (2 if wide else 1))
+                    if n <= 0:
+                        ci += 1; buf = chunks[ci]; wide = buf[0] & 1; q = 1
+                        continue
+                    if wide:
+                        parts.append(buf[q:q + 2 * n].decode("utf-16le", "replace")); q += 2 * n
+                    else:
+                        parts.append(buf[q:q + n].decode("latin-1")); q += n
+                    left -= n
+                skip = rt * 4 + ext
+                while skip > 0:
+                    if q >= len(buf):
+                        ci += 1; buf = chunks[ci]; q = 0
+                    n = min(skip, len(buf) - q); q += n; skip -= n
+                out.append("".join(parts))
+            return out
+
+        def rk(v):
+            if v & 2:
+                x = v >> 2
+                if x & 0x20000000:
+                    x -= 0x40000000
+                x = float(x)
+            else:
+                x = struct.unpack("<d", struct.pack("<II", 0, v & 0xFFFFFFFC))[0]
+            return x / 100 if v & 1 else x
+
+        sst = []
+        for i, (rt, body) in enumerate(recs):
+            if rt == 0x00FC:
+                ch = [body]; k = i + 1
+                while k < len(recs) and recs[k][0] == 0x003C:
+                    ch.append(recs[k][1]); k += 1
+                sst = read_sst(ch); break
+        sheets = []; cur = None; first = True
+        for rt, body in recs:
+            if rt == 0x0809:  # BOF: 첫 번째는 통합 문서 전역, 그 뒤는 시트마다
+                if first:
+                    first = False
+                else:
+                    cur = {}; sheets.append(cur)
+            elif cur is None:
+                continue
+            elif rt == 0x00FD:
+                r, c, _xf, idx = struct.unpack_from("<HHHI", body); cur[(r, c)] = sst[idx] if idx < len(sst) else ""
+            elif rt == 0x0203:
+                r, c, _xf, v = struct.unpack_from("<HHHd", body); cur[(r, c)] = v
+            elif rt == 0x027E:
+                r, c, _xf, v = struct.unpack_from("<HHHI", body); cur[(r, c)] = rk(v)
+            elif rt == 0x00BD:
+                r, c0 = struct.unpack_from("<HH", body)
+                for k in range((len(body) - 6) // 6):
+                    cur[(r, c0 + k)] = rk(struct.unpack_from("<I", body, 6 + 6 * k)[0])
+            elif rt == 0x0204:
+                r, c, _xf, cch = struct.unpack_from("<HHHH", body)
+                cur[(r, c)] = body[9:9 + cch * 2].decode("utf-16le", "replace") if body[8] & 1 else body[9:9 + cch].decode("latin-1")
+            elif rt == 0x0006 and body[12:14] != b"\xff\xff":
+                r, c, _xf = struct.unpack_from("<HHH", body); cur[(r, c)] = struct.unpack_from("<d", body, 6)[0]
+    except SystemExit:
+        raise
+    except (struct.error, IndexError, StopIteration, ValueError):
+        raise SystemExit(BAD)
+    out = []
+    for sh in sheets:
+        if not sh:
+            continue
+        nr = max(r for r, _ in sh) + 1; nc = max(c for _, c in sh) + 1
+        lines = []
+        for r in range(nr):
+            cells = []
+            for c in range(nc):
+                v = sh.get((r, c), "")
+                if isinstance(v, float):
+                    v = str(int(v)) if v == int(v) and abs(v) < 1e15 else repr(v)
+                cells.append(clean_cell(v))
+            lines.append("\t".join(cells).rstrip("\t"))
+        out.append(lines)
+    return out
+
+
 def find_header(lines, delims=("\t", ",", None)):
     for i, l in enumerate(lines):
         for d in delims:
@@ -268,12 +435,11 @@ def pick_columns(hdr):
 
 def parse_result(path):
     raw = open(path, "rb").read()
-    if raw[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
-        raise SystemExit("입력 오류: 구형 엑셀(.xls) 파일은 읽지 못합니다 — 엑셀에서 '다른 이름으로 저장 → Excel 통합 문서(.xlsx)' 로 저장하거나 텍스트(.txt)·CSV 로 내보내 첨부해 주세요")
-    if raw[:4] == b"PK\x03\x04":  # 엑셀(.xlsx): 머리글이 있는 첫 시트를 쓴다
+    is_xls = raw[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # 구형 엑셀(.xls) — MIDAS 의 Export to Excel 이 만드는 형식
+    if is_xls or raw[:4] == b"PK\x03\x04":  # 엑셀(.xls·.xlsx): 머리글이 있는 첫 시트를 쓴다. 확장자가 아니라 파일 내용으로 가린다
         hdr_i = hdr = delim = None
         lines = []
-        for sheet_lines in xlsx_sheets(path):
+        for sheet_lines in (xls_sheets(raw) if is_xls else xlsx_sheets(path)):
             hdr_i, hdr, delim = find_header(sheet_lines)
             if hdr is not None:
                 lines = sheet_lines; break
@@ -288,7 +454,7 @@ def parse_result(path):
         lines = [l.rstrip("\r\n") for l in text.splitlines()]
         head = "\n".join(lines[:40]).upper()
         if "MIDAS GEN TEXT(MGT)" in head or ("*VERSION" in head and "*UNIT" in head):
-            raise SystemExit("입력 오류: 첨부한 파일은 MIDAS 모델(MGT) 입니다 — 구조 검토에는 MIDAS 에서 해석한 결과표(Beam Force: Elem, Load, Part, Axial, Shear, Moment 열)를 텍스트(.txt)·CSV·엑셀(.xlsx)로 내보낸 파일을 첨부해야 합니다")
+            raise SystemExit("입력 오류: 첨부한 파일은 MIDAS 모델(MGT) 입니다 — 구조 검토에는 MIDAS 에서 해석한 결과표(Beam Force: Elem, Load, Part, Axial, Shear, Moment 열)를 엑셀(.xls·.xlsx)·텍스트(.txt)·CSV 로 내보낸 파일을 넣어야 합니다")
         hdr_i, hdr, delim = find_header(lines)
         # CSV 는 따옴표 안에 줄바꿈이 든 칸(머리글 "Axial⏎(kN)")이 있을 수 있다. 줄 단위로만 읽으면 머리글이 첫 줄에서 잘려 Axial 뒤 열을 못 찾고
         # 부재력이 전부 0 으로 들어간다(1.6.0 까지의 증상: 전 부재 OK·공란). 파일 전체를 CSV 로 읽은 줄 목록도 만들어 머리글에서 더 많은 열을 찾는 쪽을 쓴다.
@@ -301,7 +467,7 @@ def parse_result(path):
             if chdr is not None and n_keys(chdr) > n_keys(hdr):
                 lines, hdr_i, hdr, delim = csv_lines, ci, chdr, cd
         if hdr is None:
-            raise SystemExit("결과표 머리글을 찾지 못함 — MIDAS 결과 테이블(Beam Force: Elem, Load, Part, Axial, Shear, Moment 열)을 텍스트(.txt)·CSV·엑셀(.xlsx)로 내보낸 파일이어야 함")
+            raise SystemExit("결과표 머리글을 찾지 못함 — MIDAS 결과 테이블(Beam Force: Elem, Load, Part, Axial, Shear, Moment 열)을 엑셀(.xls·.xlsx)·텍스트(.txt)·CSV 로 내보낸 파일이어야 함")
     hdr = [clean_cell(c) for c in hdr]
     idx = pick_columns(hdr)
     # 부재력 열을 하나라도 못 찾으면 0 으로 채워 검토하지 않고 멈춘다(조용히 '전 부재 OK' 가 나오는 것 방지) → 형식 문제이므로 자동 보고
@@ -382,7 +548,7 @@ step("MIDAS 결과표 읽기")
 rows, meta = parse_result(res_p)
 if not rows:
     if meta["unknown_count"]:  # 다른 모델의 결과표를 넣은 경우 = 사용자가 고칠 입력 문제(자동 오류 보고 대상 아님)
-        raise SystemExit(f"입력 오류: 결과표의 요소 번호가 선택한 모델과 하나도 맞지 않습니다(모르는 요소 번호 {meta['unknown_count']}개) — 선택한 모델을 해석한 결과표인지 확인해 주세요")
+        raise SystemExit(f"입력 오류: 결과표의 요소 번호가 넣은 모델과 하나도 맞지 않습니다(모르는 요소 번호 {meta['unknown_count']}개) — 이 모델을 해석한 결과표인지 확인해 주세요")
     raise SystemExit(f"결과표에서 읽을 수 있는 행이 없음(머리글은 찾았으나 형식 불일치 {meta['skipped']}행) — 결과표 형식 확인 필요")
 if not any(abs(r[k]) > 1e-9 for r in rows for k in ("n", "vy", "vz", "my", "mz")):
     # 부재력이 전부 0 이면 검토해도 전 부재 OK(D/C 0)만 나오므로 결과를 만들지 않는다. 열을 잘못 읽었을 가능성이 있어 자동 보고 대상

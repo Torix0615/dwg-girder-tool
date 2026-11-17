@@ -110,3 +110,13 @@
 - 캔버스 합의에 없던 것(표본 파일 전송, [건너뛰기]가 나오지 않는 경우, 확인 팝업)은 배포 전 보고에 따로 적어 알린 뒤 "알아서 배포" 답을 받고 배포했다. 합의본과 다르게 구현한 곳은 배포 전에 드러낸다.
 - 배포: `release.py 1.7.0 --notes-file=dist_build/out/notes_1.7.0.txt --shell` 를 백그라운드로 실행(로그 `dist_build/out/release_1.7.0.log`, 약 10분 — 대부분 electron-builder 빌드와 설치본 146MB 업로드). 확인 4가지 = Release app-v1.7.0 자산 3개(app.zip·Setup·README), raw latest.json 의 app_version·shell_version 1.7.0, 로컬 설치본 sha256 = latest.json shell_sha256, `HEAD == origin/main`(9a04614).
 - 다음 후보(미착수): `Beam Force.xls`(OLE2) 직접 읽기, `.OUT` 첨부를 오류 보고 대신 안내로, 미판정 피드백 5건 판정, 전문가 확인(WG 제외·실제 CSV/txt 파일·"MGT 만으로는 검토 불가" 답).
+
+## 2026-11-17
+
+- **구조 검토 파일 넣기 단순화(1.8 예정, 미배포·미커밋)** — 사용자 지시: 구조 검토의 타당성이 아니라 **넣는 절차의 번거로움**을 줄이는 작업. 요구 = 모델(.mgt)과 결과표를 한 번에 넣기, `.xls` 그대로 받기, 에러로 끝나지 않기.
+- `.xls` 읽기 = `stage4_check.py xls_sheets(raw)`: OLE2(FAT·DIFAT·미니 스트림) → `Workbook` 스트림 → BIFF8 레코드 SST(0xFC + CONTINUE 0x3C, 경계에서 글자 폭 플래그 다시 읽기)·LABELSST(0xFD)·NUMBER(0x203)·RK(0x27E)·MULRK(0xBD)·LABEL(0x204)·FORMULA(0x06). 종류는 확장자가 아니라 파일 앞 바이트로 가림. 회귀 실물 = `feedback/20261111_162738_56243c/files/…_MIDAS_결과.xls` + 어린이집 모델 → 검토 128·256행·모르는 요소 4·기본 설정 OK 104/NG 24(텍스트로 푼 사본과 요소별 결과 일치).
+- 엔진: `sniff()`(도면/모델/결과표를 내용으로 구분) → `describe()`·`startReview(model, table)`; 함께 넣은 결과표는 `job.pendingTable` 로 두었다가 모델 읽기가 끝나면 `runStage4`. 검토는 `stage4_new` 폴더에서 하고 끝난 뒤 `stage4` 로 바꿔 넣음 → 결과표가 아닌 파일을 넣어도 앞 결과가 남음.
+- 넣은 파일 문제(입력 오류·설정 오류·머리글 못 찾음)는 구조 검토 작업에서 **검토 실패 상태로 남기지 않음**: `job.tableNote{name,text}` 를 결과표 칸에 표시하고 목록은 "결과표 넣기 대기". 머리글을 못 찾은 파일은 모르는 표 형식일 수 있어 `stage4_rejected` 폴더의 파일을 붙여 자동 보고만 조용히 보냄. 프로그램 오류(그 밖의 예외)는 종전대로 "검토 에러".
+- 화면: [+ 구조 검토] = 파일 선택 창이 아니라 두 칸 화면(`view 'review'`, `slotsHtml`). 파일 선택 창은 다중 선택 + 첫 필터가 모델·결과표 묶음이라 두 파일을 한 번에 고를 수 있음. 끌어 놓기·파일 선택 모두 `takeItems()` 한 곳으로.
+- 검증 방법: 엔진 Node 시험(임시 root = pkg/app 복사 + 고친 .py + runtime 정션, `onError` 는 기록만) 13항목, 개발 실행 앱(`GIRDER_TEST_ROOT`, `feedback_server.txt` = 닫힌 포트) + Playwright `connect_over_cdp` 12항목, 실제 끌어 놓기는 CDP `Input.dispatchDragEvent`(`data.files` 에 경로 2개, dragEnter→dragOver→drop). 주의: Playwright 로 `Browser.close` 를 보내면 앱은 꺼지지만 파이썬이 끝나지 않고 멈춤 → 결과는 닫기 전에 출력(flush)하고 PID 로 정리. 긴 패치·한글·백틱이 든 스크립트는 Bash heredoc 이 깨지므로 Write 로 파일을 만든 뒤 실행.
+- 같은 날 분석(참고): 앱은 요소 끝(I·J)을 항상 상부근으로 검토 — 실물 결과표 192행 중 52행이 하부 인장. 모멘트 부호로 상·하부근을 고르는 수정은 미결정.

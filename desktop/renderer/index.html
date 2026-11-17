@@ -82,7 +82,7 @@
     </div>
     <div class="setgrp" id="setChkGrp">
       <h4>구조 검토 — MIDAS GEN 해석 결과로 기둥·거더·보 검토 (KDS 14 20 강도설계법)</h4>
-      <p class="hint">위의 <b>+ 구조 검토</b> 로 수작업을 마친 MIDAS 모델(.mgt)을 선택하고, 그 모델을 <b>해석</b>한 결과 테이블(Beam Force)을 텍스트(.txt·.csv) 또는 엑셀(.xlsx)로 저장한 뒤, 왼쪽 목록에서 그 모델을 누르면 오른쪽에 나오는 <b>MIDAS 해석 결과표(텍스트·엑셀) 첨부 → 검토 실행</b> 버튼으로 첨부하면 검토합니다(골조 모델링 없이 단독 실행). 콘크리트 강도는 모델의 재료 등급(C27·C30·C35 등)을 우선 쓰고, 등급이 없을 때만 아래 fck 값을 씁니다. 아래 값은 검토 시작값이며, NG 부재는 <b>철근 → 폭 → 춤</b> 순으로 추천합니다. 철근은 <b>개수-직경</b>(예 4-D22), 띠철근·스터럽은 <b>직경@간격</b>(예 D10@200)으로 적습니다.</p>
+      <p class="hint">위의 <b>+ 구조 검토</b> 를 누르고, 수작업을 마친 MIDAS 모델(.mgt)과 그 모델을 <b>해석</b>한 결과 테이블(Beam Force)을 Export to Excel 로 저장한 파일(.xls) 두 개를 넣으면 바로 검토합니다(두 파일을 창에 함께 끌어 놓아도 됩니다. 골조 모델링 없이 단독 실행). 콘크리트 강도는 모델의 재료 등급(C27·C30·C35 등)을 우선 쓰고, 등급이 없을 때만 아래 fck 값을 씁니다. 아래 값은 검토 시작값이며, NG 부재는 <b>철근 → 폭 → 춤</b> 순으로 추천합니다. 철근은 <b>개수-직경</b>(예 4-D22), 띠철근·스터럽은 <b>직경@간격</b>(예 D10@200)으로 적습니다.</p>
       <div class="nums">
         <label><span>콘크리트 fck — 기둥</span><input type="number" data-key="검토_fck_기둥" min="18" max="100" step="1" inputmode="numeric" /><em>MPa</em><i class="dflt"></i></label>
         <label><span>콘크리트 fck — 거더·보</span><input type="number" data-key="검토_fck_보" min="18" max="100" step="1" inputmode="numeric" /><em>MPa</em><i class="dflt"></i></label>

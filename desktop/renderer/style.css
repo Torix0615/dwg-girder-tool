@@ -189,3 +189,18 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 .texts .pair input { width: 50%; }
 .texts em { font-style: normal; color: var(--muted); font-size: 12px; }
 .texts i.dflt { font-style: normal; color: var(--muted); font-size: 11px; }
+
+/* 구조 검토: 파일 두 칸(MIDAS 모델·해석 결과표) — 1.8.0 */
+.drop { border: 1px dashed #4a5163; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.s4 .drop { margin-top: 8px; }
+.slot { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.slot-lb { font-weight: 600; }
+.slot-desc { grid-column: 1; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.slot .btn { grid-column: 2; grid-row: 1 / span 2; }
+.slot.filled { border-color: #2f5a3f; }
+.slot.filled .slot-desc { color: var(--ok); }
+.slot.bad { border-color: #6a5a2a; }
+.slot.bad .slot-desc { color: var(--accent); }
+.drop-hint { text-align: center; color: var(--muted); font-size: 12px; margin: 2px 0 0; }
+.rv-msg, .s4-note { margin: 10px 0 0; }
+.rv-foot { margin-top: 12px; }

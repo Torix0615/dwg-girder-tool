@@ -61,8 +61,9 @@ btnPin.addEventListener('click', async () => {
   btnPin.classList.toggle('on', on);
 });
 
-// ---- 화면: jobs(작업 목록 + 작업 결과) / general([피드백]: 작업 없이 보내는 피드백) / log([피드백 로그]) / settings(⚙)
+// ---- 화면: jobs(작업 목록 + 작업 결과) / review([+ 구조 검토]: 파일 두 개 넣기) / general([피드백]: 작업 없이 보내는 피드백) / log([피드백 로그]) / settings(⚙)
 let view = 'jobs';
+const rv = { table: null, msg: null }; // [+ 구조 검토] 화면: 먼저 넣은 결과표(모델이 오면 함께 검토 시작)·안내 글
 let state = { jobs: [], running: false };
 let selected = null;
 const drafts = {}; // jobId → {text, kind} : 작업 결과 화면에서 쓰던 피드백(작업마다 저장 — 다른 곳에 다녀와도 남음)
@@ -108,10 +109,12 @@ $('#btnUpdate').addEventListener('click', () => api.updateCheck());
 $('#btnStart').addEventListener('click', async () => {
   if (await setView('jobs')) api.startJob();
 });
-// 구조 검토: 수작업을 마친 MIDAS 모델(.mgt) 선택 → 모델 읽기 → 오른쪽 화면에서 결과표 첨부(.mgt 를 끌어다 놓아도 같음)
-$('#btnS4').addEventListener('click', async () => {
-  if (await setView('jobs')) api.startStage4();
+// 구조 검토: 파일 두 개(MIDAS 모델·해석 결과표)를 넣는 화면. 두 파일이 모이면 바로 검토(창에 함께 끌어다 놓아도 같음)
+$('#btnS4').addEventListener('click', () => {
+  rv.msg = null;
+  setView('review');
 });
+api.on('open-review', () => setView('review'));
 $('#btnFeedback').addEventListener('click', () => setView(view === 'general' ? 'jobs' : 'general'));
 $('#btnLog').addEventListener('click', () => setView(view === 'log' ? 'jobs' : 'log'));
 api.on('open-feedback', () => setView('general'));
@@ -255,15 +258,65 @@ function optsLabel(o) {
   return p.join(' · ');
 }
 
-// ---- 파일 끌어다 놓기(1개): 도면 = 골조 모델링, .mgt = 구조 검토
+// ---- 파일 넣기(끌어다 놓기·파일 선택 공통): 도면 = 골조 모델링, MIDAS 모델·해석 결과표 = 구조 검토.
+//      종류는 프로그램이 파일 내용으로 가린다(describeFiles). 모델과 결과표를 함께 넣으면 모델을 읽은 뒤 곧바로 검토한다.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function reviewSay(text) {
+  if (!(await setView('review'))) return;
+  rv.msg = text;
+  render();
+}
+async function takeItems(items) {
+  if (!items || !items.length) return;
+  const models = items.filter((i) => i.kind === 'model');
+  const tables = items.filter((i) => i.kind === 'table');
+  const drawings = items.filter((i) => i.kind === 'drawing');
+  if (drawings.length && !models.length && !tables.length) {
+    if (!(await setView('jobs'))) return;
+    const id = await api.run([drawings[0].path]);
+    if (id) selected = id;
+    return;
+  }
+  if (drawings.length) return reviewSay('도면과 구조 검토 파일을 함께 넣을 수 없습니다. 도면은 [+ 골조 모델링] 으로, MIDAS 모델과 해석 결과표는 여기에 넣어 주세요.');
+  if (models.length > 1) return reviewSay('MIDAS 모델은 한 번에 1개만 넣을 수 있습니다.');
+  if (tables.length > 1) return reviewSay('해석 결과표는 한 번에 1개만 넣을 수 있습니다.');
+  if (models.length) {
+    if (!(await leaveGeneral())) return;
+    const table = tables[0] || (view === 'review' ? rv.table : null);
+    const r = await api.reviewStart(models[0].path, table ? table.path : null);
+    if (!r.ok) return reviewSay(r.message);
+    rv.table = null;
+    rv.msg = null;
+    view = 'jobs';
+    selected = r.id;
+    render();
+    return;
+  }
+  // 결과표만 넣음: 지금 보고 있는 구조 검토 작업에 넣는다. 그런 작업이 없으면 [+ 구조 검토] 화면에 두고 모델을 기다린다
+  const cur = () => state.jobs.find((j) => j.id === selected);
+  if (view === 'jobs' && cur() && cur().kind === 's4' && cur().state !== 'failed' && cur().state !== 'cancelled') {
+    const id = selected;
+    for (let i = 0; i < 80 && cur() && cur().id === id && (cur().state === 'queued' || cur().state === 'running' || (cur().stage4 && cur().stage4.state === 'running')); i++) await sleep(250);
+    const r = await api.stage4Run(id, tables[0].path);
+    if (!r.ok && r.message) {
+      const m = document.querySelector('#dTop .s4 .s4-msg');
+      if (m) {
+        m.textContent = r.message;
+        m.className = 's4-msg msg err';
+      }
+    }
+    return;
+  }
+  if (!(await setView('review'))) return;
+  rv.table = tables[0];
+  rv.msg = null;
+  render();
+}
 ['dragenter', 'dragover', 'dragleave'].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault()));
 document.addEventListener('drop', async (e) => {
   e.preventDefault();
   const paths = [...(e.dataTransfer?.files || [])].map((f) => api.pathOf(f)).filter(Boolean);
-  if (paths.length) {
-    const id = await api.run(paths.slice(0, 1));
-    if (id) selected = id;
-  }
+  if (paths.length) takeItems(await api.describeFiles(paths));
 });
 
 // ---- 상태
@@ -309,6 +362,7 @@ function render() {
   if (state.jobs.length && !state.jobs.some((j) => j.id === selected)) selected = state.jobs[state.jobs.length - 1].id;
   renderList();
   if (view === 'general') renderGeneral();
+  else if (view === 'review') renderReview();
   else renderDetail(state.jobs.find((j) => j.id === selected));
 }
 
@@ -324,9 +378,9 @@ function listState(j) {
   if (!s4k) return { text: `모델링 완료${fb}`, cls: 'done' };
   const s = j.stage4;
   if (s && s.state === 'running') return { text: '검토 중', cls: 'running' };
-  if (s && s.state === 'failed') return s.failKind === 'input' ? { text: '검토 실패', cls: 'failed' } : { text: '검토 에러', cls: 'failed error' };
+  if (s && s.state === 'failed' && s.failKind !== 'input') return { text: '검토 에러', cls: 'failed error' };
   if (s && s.state === 'done' && s.summary) return { text: `검토 완료 · OK ${s.summary.ok} / NG ${s.summary.ng}${fb}`, cls: 'done' };
-  return { text: '결과표 첨부 대기', cls: 'done' };
+  return { text: '결과표 넣기 대기', cls: 'done' }; // 넣은 파일이 결과표가 아니었던 경우도 실패가 아니라 다시 넣기를 기다림
 }
 const jobTime = (j) => (j.stage4 && j.stage4.ended) || j.ended || j.started || j.created || 0;
 function renderList() {
@@ -420,7 +474,7 @@ function topHtml(j) {
 
 function renderDetail(j) {
   if (!j) {
-    setPart('#dTop', '<p class="hint none-main">작업이 없습니다. 위의 [+ 골조 모델링] 또는 [+ 구조 검토] 로 시작하면 결과가 여기에 표시됩니다. 도면(DWG·DXF)이나 MIDAS 모델(.mgt) 파일을 이 창에 끌어다 놓아도 됩니다.</p>');
+    setPart('#dTop', '<p class="hint none-main">작업이 없습니다. 위의 [+ 골조 모델링] 또는 [+ 구조 검토] 로 시작하면 결과가 여기에 표시됩니다. 도면(DWG·DXF)이나 MIDAS 모델(.mgt)과 해석 결과표 파일을 이 창에 끌어다 놓아도 됩니다.</p>');
     setPart('#dFb', '');
     return;
   }
@@ -440,12 +494,14 @@ function bindTop(j) {
       m.className = 's4-msg msg ' + cls;
     }
   };
-  el.querySelector('[data-act=s4-pick]')?.addEventListener('click', async (e) => {
-    e.target.disabled = true;
-    const r = await api.stage4Pick(j.id);
-    e.target.disabled = false;
-    if (r.message) s4msg(r.message, r.ok ? '' : 'err');
-  });
+  el.querySelectorAll('[data-act=rv-pick]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      const items = await api.reviewPick(b.dataset.want);
+      b.disabled = false;
+      takeItems(items);
+    }),
+  );
   el.querySelector('[data-act=s4-apply]')?.addEventListener('click', async (e) => {
     e.target.disabled = true;
     const r = await api.stage4Apply(j.id);
@@ -668,15 +724,53 @@ function renderLog() {
   );
 }
 
-// ---- 구조 검토 영역: 구조 검토 작업(kind 's4', 모델 MGT)에서 MIDAS 해석 결과표 첨부 → 검토 → 엑셀, 승인 → 수정 MGT.
+/** 파일 두 칸(MIDAS 모델·해석 결과표). model/table = {name, mtime} 또는 null, note = 결과표 칸에 적을 안내 {name, text} */
+const TABLE_DESC = 'Results → Result Tables → Beam → Force 표에서 Export to Excel 로 저장한 파일 (.xls · .xlsx · .txt · .csv)';
+function slotsHtml({ model, table, note, hint }) {
+  const filled = (f) => `${esc(f.name)}${f.mtime ? ` · ${esc(fmtDate(f.mtime))} 저장` : ''}`;
+  return `<div class="drop">
+    <div class="slot${model ? ' filled' : ''}"><div class="slot-lb">MIDAS 모델</div><div class="slot-desc">${model ? filled(model) : 'File → Export → MGT 로 저장한 파일 (.mgt)'}</div><button class="btn ghost small" data-act="rv-pick" data-want="model">${model ? '다른 파일' : '파일 선택'}</button></div>
+    <div class="slot${table ? ' filled' : note ? ' bad' : ''}"><div class="slot-lb">해석 결과표 (Beam Force)</div><div class="slot-desc">${table ? filled(table) : note ? `<b>${esc(note.name || '넣은 파일')}</b> — ${esc(note.text)}` : TABLE_DESC}</div><button class="btn ${model && !table ? '' : 'ghost '}small" data-act="rv-pick" data-want="table">${table ? '다른 파일' : '파일 선택'}</button></div>
+    <p class="drop-hint">${esc(hint)}</p>
+  </div>`;
+}
+
+// ---- [+ 구조 검토] 를 눌렀을 때: 파일 두 개 넣기. 모델이 들어오면 작업이 만들어지고(왼쪽 목록), 결과표까지 있으면 곧바로 검토한다
+function renderReview() {
+  const html = `<div data-review>
+    <h2 class="d-name">구조 검토</h2>
+    <div class="d-status">MIDAS 에서 내보낸 파일 두 개를 넣으면 바로 검토합니다.</div>
+    ${slotsHtml({ model: null, table: rv.table, note: null, hint: rv.table ? 'MIDAS 모델을 넣으면 바로 검토합니다. 이 창에 끌어 놓아도 됩니다.' : '두 파일을 이 창에 함께 끌어 놓아도 됩니다. 종류는 자동으로 구분합니다.' })}
+    ${rv.msg ? `<p class="msg err rv-msg">${esc(rv.msg)}</p>` : ''}
+    <p class="hint rv-foot">결과표는 <b>이 모델과 같은 요소 번호</b>여야 합니다. 검토 기준값은 ⚙ 설정.</p>
+  </div>`;
+  if (setPart('#dTop', html)) {
+    document.querySelectorAll('#dTop [data-act=rv-pick]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        const items = await api.reviewPick(b.dataset.want);
+        b.disabled = false;
+        takeItems(items);
+      }),
+    );
+  }
+  setPart('#dFb', '');
+}
+
+// ---- 구조 검토 영역: 구조 검토 작업(kind 's4', 모델 MGT)에서 MIDAS 해석 결과표 넣기 → 검토 → 엑셀, 승인 → 수정 MGT.
 //      골조 모델링 작업 화면에는 두지 않는다(구조 검토는 수작업 뒤 [+ 구조 검토] 로 따로 시작). 1.5.x 에서 도면 작업으로 검토했던 결과만 내려받을 수 있게 남김.
+//      넣은 파일이 결과표가 아니면(모델·해석 기록·다른 모델의 표) 검토 실패로 남기지 않고 결과표 칸에 이유를 적어 다시 넣기를 기다린다(1.8.0).
 const KIND_KO = { col: '기둥', girder: '거더', beam: '보' };
 function renderStage4(j) {
-  const s = j.stage4;
+  let s = j.stage4;
   const s4k = j.kind === 's4';
   if (!s4k && !(s && s.state === 'done' && s.summary)) return '';
-  const canRun = s4k && (!s || s.state !== 'running');
-  const pickLabel = s && s.state === 'done' ? '📎 다른 결과표로 다시 검토' : '📎 MIDAS 해석 결과표(텍스트·엑셀) 첨부 → 검토 실행';
+  let note = s4k ? j.tableNote || null : null;
+  if (s4k && s && s.state === 'failed' && s.failKind === 'input') {
+    note = { name: s.resultName, text: String(s.failReason || '').replace(/^(입력|설정) 오류:\s*/, '') }; // 1.7.x 에서 남은 "검토 실패" 기록
+    s = null;
+  }
+  const slots = () => slotsHtml({ model: { name: j.name, mtime: j.srcMtime }, table: null, note, hint: '결과표를 넣으면 바로 검토합니다. 이 창에 끌어 놓아도 됩니다.' });
   let body = '';
   if (s4k && !j.elements) {
     body = `<p class="hint">모델 요소표가 없어 검토할 수 없습니다. 위의 [+ 구조 검토] 로 모델을 다시 선택해 주세요.</p>`;
@@ -684,22 +778,23 @@ function renderStage4(j) {
     const pct = Math.min(95, Math.round(((s.stepIdx || 0) / (s.total || 4)) * 100));
     body = `<div class="d-status running">${esc(s.step || '검토 중')} · ${fmtSec(Date.now() - s.started)}</div><div class="bar"><i style="width:${pct}%"></i></div><pre class="d-tail">${esc((s.tail || []).slice(-4).join('\n'))}</pre>`;
   } else if (s && s.state === 'failed') {
-    body = `<div class="fail ${s.failKind === 'input' ? 'input' : 'error'}"><b>${s.failKind === 'input' ? '설정·입력 문제' : '프로그램 오류'}</b> ${esc(s.failReason || '')}
-      <div class="hint">${s.failKind === 'input' ? '안내대로 설정(⚙) 또는 첨부 파일을 고친 뒤 다시 검토해 주세요.' : esc(s.errorReport ? s.errorReport.message : '결과표를 포함한 오류 보고를 자동으로 보냅니다. 형식을 맞춘 업데이트가 나오면 자동 설치됩니다.')}</div></div>`;
+    body = `<div class="fail error"><b>프로그램 오류</b> ${esc(s.failReason || '')}
+      <div class="hint">${esc(s.errorReport ? s.errorReport.message : '결과표를 포함한 오류 보고를 자동으로 보냅니다. 형식을 맞춘 업데이트가 나오면 자동 설치됩니다.')}</div></div>${slots()}`;
   } else if (s && s.state === 'done' && s.summary) {
     const m = s.summary;
     const kinds = Object.entries(m.by_kind || {}).map(([k, v]) => `${KIND_KO[k] || k} OK ${v.ok}·NG ${v.ng}${v.dims ? `(치수 ${v.dims})` : ''}`).join(' / ');
-    body = `<div class="chips"><span class="chip2">검토 ${m.total}</span><span class="chip2 ok">OK ${m.ok}</span><span class="chip2 ${m.ng ? 'ng' : ''}">NG ${m.ng}</span>${m.none ? `<span class="chip2 warn">결과 없음 ${m.none}</span>` : ''}${m.dims_changed ? `<span class="chip2 warn">치수 변경 추천 ${m.dims_changed}</span>` : ''}</div>
+    body = `${note ? `<p class="msg err s4-note"><b>${esc(note.name || '넣은 파일')}</b> — ${esc(note.text)} 아래는 앞서 검토한 결과입니다.</p>` : ''}
+      <div class="chips"><span class="chip2">검토 ${m.total}</span><span class="chip2 ok">OK ${m.ok}</span><span class="chip2 ${m.ng ? 'ng' : ''}">NG ${m.ng}</span>${m.none ? `<span class="chip2 warn">결과 없음 ${m.none}</span>` : ''}${m.dims_changed ? `<span class="chip2 warn">치수 변경 추천 ${m.dims_changed}</span>` : ''}</div>
       <p class="hint">${esc(kinds)} · 결과표 ${esc(s.resultName || '')} · 하중 ${m.loads}종 ${m.rows}행${m.unknown ? ` · 대응표에 없는 요소 ${m.unknown}개 무시` : ''} · ${esc(fmtDate(s.ended))}</p>
       <div class="row gap"><button class="btn" data-act="s4-xlsx">⬇ 검토 결과 엑셀</button>
-      ${m.ng && m.dims_changed ? (s.mgt2 ? `<button class="btn" data-act="s4-mgt2">⬇ 수정 MGT (승인됨)</button>${s4k ? `<button class="btn ghost small" data-act="s4-apply">다시 생성</button>` : ''}` : s4k ? `<button class="btn" data-act="s4-apply">✔ 승인 → 수정 MGT 생성</button>` : '') : ''}</div>
+      ${m.ng && m.dims_changed ? (s.mgt2 ? `<button class="btn" data-act="s4-mgt2">⬇ 수정 MGT (승인됨)</button>${s4k ? `<button class="btn ghost small" data-act="s4-apply">다시 생성</button>` : ''}` : s4k ? `<button class="btn" data-act="s4-apply">✔ 승인 → 수정 MGT 생성</button>` : '') : ''}
+      ${s4k && j.elements ? `<button class="btn ghost small" data-act="rv-pick" data-want="table">다른 파일로 검토</button>` : ''}</div>
       <p class="hint">${m.ng === 0 ? '모든 부재 OK — MGT 수정이 필요 없습니다.' : m.dims_changed ? '승인하면 치수가 바뀐 부재만 새 단면(C2·G2·B2…)으로 바꾼 MGT 를 만듭니다. 철근은 MGT 에 쓰지 않으며 엑셀의 추천 철근을 참고하십시오.' : 'NG 부재는 철근 보강만으로 해결됩니다(엑셀 추천 철근 참조) — 단면 치수 변경이 없어 MGT 수정은 필요 없습니다.'}${s.applied ? ` 수정 MGT: 요소 ${s.applied.changed}개 단면 교체, 새 단면 ${(s.applied.new_sections || []).map((x) => `${x.name} ${x.H}×${x.B}`).join(', ')}` : ''}</p>`;
   } else {
-    body = `<p class="hint">이 모델을 MIDAS GEN 에서 <b>해석</b>한 뒤 Results → Result Tables → Beam → Force 표를 텍스트(.txt)·CSV·엑셀(.xlsx) 중 하나로 내보내 아래 버튼으로 첨부하면 기둥(축력·PM 상관도·장주)·거더·보(휨·전단)를 KDS 14 20 으로 검토하고 NG 부재는 철근 → 폭 → 춤 순으로 추천합니다. 결과표는 <b>이 모델과 같은 요소 번호</b>여야 하므로, 모델을 고쳤다면 모델도 다시 선택해 주세요. 검토 기준값은 ⚙ 설정.</p>`;
+    body = `${slots()}<p class="hint rv-foot">결과표는 <b>이 모델과 같은 요소 번호</b>여야 합니다. 모델을 고쳤다면 모델과 결과표를 함께 다시 넣어 주세요. 검토 기준값은 ⚙ 설정${note && note.settings ? ' — 안내대로 설정을 고친 뒤 결과표를 다시 넣어 주세요' : ''}.</p>`;
   }
   if (!s4k) return `<section class="s4"><h3>구조 검토 <span class="chip">이전 검토 결과</span></h3>${body}<span class="s4-msg msg"></span></section>`;
-  return `<section class="s4"><h3>구조 검토 <span class="chip">MIDAS 해석 결과 → KDS 14 20</span></h3>${body}
-    ${j.elements && canRun ? `<div class="row gap"><button class="btn ${s && s.state === 'done' ? 'ghost small' : ''}" data-act="s4-pick">${pickLabel}</button><span class="s4-msg msg"></span></div>` : '<span class="s4-msg msg"></span>'}</section>`;
+  return `<section class="s4"><h3>구조 검토 <span class="chip">MIDAS 해석 결과 → KDS 14 20</span></h3>${body}<span class="s4-msg msg"></span></section>`;
 }
 
 // ---- 업데이트 띠
