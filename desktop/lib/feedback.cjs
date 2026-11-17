@@ -20,7 +20,23 @@ function desktopDir() {
   return p && fs.existsSync(p) ? p : path.join(os.homedir(), 'Desktop');
 }
 
+/** 개발 검증(GIRDER_TEST_ROOT 격리 실행)에서는 실제 서버로 절대 보내지 않는다: GIRDER_TEST_SERVER(없으면 닫힌 포트)로만.
+ *  격리 폴더의 엔진이 설치본보다 옛 버전이면 켜질 때 엔진 폴더를 다시 복사하면서 feedback_server.txt 가 실제 주소로 되돌아가기 때문(11-18 시험 기록 6건이 실제 서버로 올라간 일). 설치본에서는 적용되지 않는다 */
+function testServer() {
+  if (!process.env.GIRDER_TEST_ROOT) return null;
+  let packaged = false;
+  try {
+    const el = require('electron');
+    packaged = Boolean(el && el.app && el.app.isPackaged);
+  } catch {
+    /* Electron 없이 실행(엔진 시험) */
+  }
+  return packaged ? null : process.env.GIRDER_TEST_SERVER || 'http://127.0.0.1:9';
+}
+
 function serverInfo(engine, bundledApp) {
+  const forced = testServer();
+  if (forced) return { url: forced.replace(/\/+$/, '') };
   const txt = readText(path.join(engine.paths.APP, 'feedback_server.txt')) || readText(path.join(bundledApp, 'feedback_server.txt'));
   const url = txt.split(/\r?\n/)[0].trim(); // 주소만. 키는 두지 않음(업로드는 공개 엔드포인트, 앱 배포물에 비밀값 없음)
   return /^https?:\/\//.test(url) ? { url: url.replace(/\/+$/, '') } : null;
@@ -35,7 +51,7 @@ function buildZip({ root, engine, text, scope, category, job, log, out }) {
   head.push(`자동 분류: ${KIND_LABEL[auto.category]} (UI: ${auto.ui.join('·') || '-'} / 규칙: ${auto.rule.join('·') || '-'})`);
   const isS4 = Boolean(job && job.kind === 's4'); // 4단계 단독 작업: 원본 = 모델 MGT(결과 폴더 사본이 있으면 사본만 첨부 — 같은 파일 이름 중복 방지)
   if (isS4) head.push(`대상 모델(구조 검토): ${job.src}`, `모델 읽기: ${job.message}${job.model ? ` / 기둥 ${job.model.col}·거더 ${job.model.girder}·보 ${job.model.beam} / 제외 ${JSON.stringify(job.model.skipped || {})}` : ''}`);
-  else if (job) head.push(`대상 도면: ${job.src}`, `결과: ${job.result ? path.basename(job.result) : '(실패)'} / ${job.message}`);
+  else if (job) head.push(`대상 도면: ${job.src}`, `결과: ${job.result ? path.basename(job.result) : '(실패)'} / ${job.message}`, `이 작업의 모델링 값: ${job.cond ? JSON.stringify(job.cond) : '(기록 없음)'}`);
   else head.push('대상 도면: (없음 — 작업 없이 보낸 피드백)');
   const s4 = job && job.stage4;
   if (s4) head.push(`구조 검토: ${s4.state} / ${s4.message || ''} / 결과표 ${s4.resultName || '-'}`);
@@ -193,4 +209,4 @@ async function sendSample({ root, engine, bundledApp, appVersion, job, log }) {
   }
 }
 
-module.exports = { send, sendError, sendSample };
+module.exports = { send, sendError, sendSample, serverInfo };

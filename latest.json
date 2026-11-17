@@ -1,6 +1,22 @@
 {
  "notes": [
   {
+   "version": "1.9.0",
+   "date": "2026-11-18",
+   "items": [
+    "골조 모델링: 도면을 고르면 \"모델링 조건\" 화면이 먼저 나옴. 실행 범위·[2단계에서 보 생성]·보 수치 4개·층고를 확인하고 [모델링 시작] 을 눌러야 실행([취소] 는 시작하지 않음). 처음에는 앞 작업에 쓴 값이 채워져 있음",
+    "골조 모델링: 값은 작업마다 따로 적용되고, 진행 중·완료 화면의 파일 이름 아래에 그 작업에 적용된 값이 표시됨",
+    "골조 모델링: 완료 화면에 [값 바꿔 다시 모델링] 추가. 그 작업의 값에서 시작하며 바꾼 칸은 노란 테두리로 표시. 같은 도면으로 새 작업이 생김",
+    "설정(⚙): 골조 모델링 값(실행 범위·보·층고)을 설정에서 뺌. 설정에는 구조 검토 값만 남음. 전에 설정에 저장해 둔 골조 모델링 값은 첫 \"모델링 조건\" 화면에 채워짐",
+    "설정(⚙): 값을 바꾸고 저장하지 않은 채 다른 곳으로 가면 \"바꾼 설정을 저장하지 않았습니다\" 창이 나옴 — [저장하고 나가기] / [저장하지 않고 나가기]",
+    "\"모델링 조건\" 화면은 왼쪽 목록 맨 위에 \"조건 입력 중\" 으로 표시됨. [+ 구조 검토] 를 누르면 왼쪽 목록에는 줄이 생기지 않고 오른쪽 화면만 바뀜(목록은 아무것도 선택되지 않은 상태)",
+    "왼쪽 목록: 끝난 작업의 상태 줄 맨 오른쪽에 태그 표시 — [전송하기]·[건너뛰기] 를 누르지 않은 작업은 \"피드백 미완료\"(빨강), 누른 작업은 \"피드백 완료\"(초록)",
+    "업데이트: 새 버전이 있으면 버튼 줄 위에 한 줄이 생김 — 왼쪽 끝에 새 버전, 오른쪽 끝에 [설치]",
+    "업데이트: 설치가 끝나면 \"업데이트 내용\" 창이 한 번 뜨고 그 버전에서 바뀐 내용만 나옴. [✕] 로 닫으면 다시 뜨지 않고, 다음 버전을 설치하면 다시 한 번 뜸",
+    "설정(⚙): \"정보\" 에 [업데이트 내역] 추가 — 지금까지의 업데이트 내용을 버전별로 볼 수 있음(버전을 누르면 펼쳐짐)"
+   ]
+  },
+  {
    "version": "1.8.0",
    "date": "2026-11-17",
    "items": [
@@ -185,12 +201,12 @@
    ]
   }
  ],
- "app_version": "1.8.0",
- "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.8.0/app.zip",
+ "app_version": "1.9.0",
+ "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.9.0/app.zip",
  "runtime_version": "1",
  "runtime_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/runtime-v1/runtime.zip",
- "shell_version": "1.8.0",
- "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.8.0/GirderTool-Setup-1.8.0.exe",
- "shell_sha256": "163c4a2475847cf6bb6fbbe309f45a01a84f1b96124898b51336fac915ce3425",
- "shell_size": 145846042
+ "shell_version": "1.9.0",
+ "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.9.0/GirderTool-Setup-1.9.0.exe",
+ "shell_sha256": "dcedd5abe55063eb701352255e88d9c6b049cc06ca3b4bac865da37f994edbcf",
+ "shell_size": 145857207
 }

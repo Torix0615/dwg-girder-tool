@@ -4,6 +4,8 @@
  *  app     : latest.json app_version > app/version.txt → 변경 내용을 띄우고 app.zip 받아 app/ 교체(작업 중이면 끝난 뒤)
  *  runtime : runtime_version 다르면 runtime.zip → runtime/ 교체(작업 중이면 끝난 뒤)
  *  shell   : shell_version > 앱 버전이면 Setup exe 받아 sha256 확인 → 창이 숨겨져 있고 작업이 없을 때 무인 설치(/S) 후 --hidden 재기동
+ * 화면 알림(1.9): status.next = 아직 설치되지 않은 새 버전(버튼 줄 위의 설치 줄), status.whatsNew = 설치를 마친 버전의 업데이트 내용(처음 한 번 뜨는 팝업,
+ *  [✕] 로 닫으면 getSeen() 이 그 버전이 되어 다시 안 뜸), changelog() = 버전별 내역(app/changelog.json — release.py 가 넣음)
  * 서버 주소: 환경변수 DWG_UPDATE_URL > app/update_source.txt (latest.json 은 GitHub raw: 반영 지연 최대 5분)
  */
 const fs = require('fs');
@@ -19,22 +21,25 @@ const { cmpVer, readText, swapDir } = require('./engine.cjs');
 const CHECK_EVERY_MS = 3 * 60 * 60 * 1000;
 const FIRST_CHECK_MS = 5 * 1000;
 
-function createUpdater({ app, root, engine, bundledApp, log, onStatus, isWindowVisible }) {
+function createUpdater({ app, root, engine, bundledApp, log, onStatus, isWindowVisible, getSeen = () => '0' }) {
   const dir = path.join(root, 'updates');
   const tmp = path.join(root, 'tmp');
-  let status = { state: 'idle', message: '', progress: 0, notes: [], latest: null, current: current() };
+  let status = { state: 'idle', message: '', progress: 0, notes: [], latest: null, next: null, shell: null, canInstall: false, whatsNew: null, current: current() };
   let running = null;
   let runningSince = 0;
   let timer = null;
   let shellReady = null; // {file, version}
   let pendingApply = null; // 작업 중이라 미룬 app/runtime 교체
+  let shellNeeded = null; // 서버에 있는 새 프로그램(설치본) 버전 — 설치 전까지 유지
+  let appNeeded = null; // 받아 두었지만 아직 교체하지 못한 엔진(app) 버전
+  let checkedOk = false; // 이번 실행에서 서버 확인에 성공했는지
 
   function current() {
     const v = engine.versions();
     return { app: v.app, runtime: v.runtime, shell: app.getVersion() };
   }
   function set(patch) {
-    status = { ...status, ...patch, current: current() };
+    status = { ...status, ...patch, current: current(), next: shellNeeded || appNeeded, shell: shellNeeded, canInstall: Boolean(shellReady && fs.existsSync(shellReady.file)) };
     try {
       onStatus(status);
     } catch {
@@ -96,6 +101,34 @@ function createUpdater({ app, root, engine, bundledApp, log, onStatus, isWindowV
     if (t.status !== 0) throw new Error(`압축 해제 실패: ${t.stderr || t.error}`);
   }
 
+  /** 버전별 업데이트 내역(최신 먼저). 엔진 폴더의 changelog.json → 설치본에 든 것 → 서버 latest.json 의 notes */
+  function changelog() {
+    for (const p of [path.join(engine.paths.APP, 'changelog.json'), path.join(bundledApp, 'changelog.json')]) {
+      try {
+        const list = JSON.parse(fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, ''));
+        if (Array.isArray(list) && list.length) return list;
+      } catch {
+        /* 없음 */
+      }
+    }
+    return (status.latest && status.latest.notes) || [];
+  }
+  /** 지금 설치된 버전까지의 내역(설정의 [업데이트 내역]) */
+  function history() {
+    const cur = current().app;
+    return changelog().filter((n) => n && n.version && cmpVer(n.version, cur) <= 0).sort((a, b) => cmpVer(b.version, a.version));
+  }
+  /** 설치를 마친 버전의 업데이트 내용을 한 번 띄울지 정한다. 엔진(app)만 먼저 바뀌고 프로그램(설치본)이 아직이면 설치가 끝난 뒤에 띄운다 */
+  function evalNews() {
+    const seen = getSeen();
+    if (status.whatsNew && cmpVer(status.whatsNew.version, seen) > 0) return; // 떠 있는 팝업은 닫을 때까지 그대로
+    const cur = current();
+    const settled = cmpVer(cur.app, cur.shell) <= 0 || (checkedOk && !shellNeeded);
+    let news = null;
+    if (cmpVer(cur.app, seen) > 0 && settled && !pendingApply) news = changelog().find((n) => n && String(n.version) === String(cur.app)) || null;
+    if (news || status.whatsNew) set({ whatsNew: news });
+  }
+
   function notesSince(latest, ver) {
     return (latest.notes || []).filter((n) => cmpVer(n.version, ver) > 0);
   }
@@ -116,9 +149,13 @@ function createUpdater({ app, root, engine, bundledApp, log, onStatus, isWindowV
     const needApp = latest.app_version && cmpVer(latest.app_version, cur.app) > 0;
     const needRt = latest.runtime_version && String(latest.runtime_version) !== String(cur.runtime) && latest.runtime_url;
     const needShell = latest.shell_version && latest.shell_url && cmpVer(latest.shell_version, cur.shell) > 0;
+    checkedOk = true;
+    shellNeeded = needShell ? String(latest.shell_version) : null;
+    appNeeded = needApp ? String(latest.app_version) : null;
     set({ latest, notes });
     if (!needApp && !needRt && !needShell) {
       set({ state: 'uptodate', message: '최신 버전입니다', progress: 0 });
+      evalNews();
       return status;
     }
     fs.mkdirSync(tmp, { recursive: true });
@@ -165,6 +202,7 @@ function createUpdater({ app, root, engine, bundledApp, log, onStatus, isWindowV
     } else if (!apply.length) {
       set({ state: 'uptodate', message: '최신 버전입니다' });
     }
+    evalNews();
     return status;
   }
 
@@ -183,8 +221,10 @@ function createUpdater({ app, root, engine, bundledApp, log, onStatus, isWindowV
         log(`${a.what} 업데이트 적용: ${a.ver}`);
       }
       engine.ensureConfig();
+      appNeeded = null;
       const applied = list.map((a) => `${a.what === 'app' ? '앱' : '런타임'} ${a.ver}`).join(', ');
       set({ state: shellReady ? 'ready' : 'updated', message: `업데이트 완료: ${applied}`, progress: 0 });
+      evalNews();
       return true;
     } catch (e) {
       log('업데이트 적용 실패', e);
@@ -200,6 +240,7 @@ function createUpdater({ app, root, engine, bundledApp, log, onStatus, isWindowV
       .catch((e) => {
         log('업데이트 확인 실패', e);
         set({ state: 'error', message: `업데이트 확인 실패: ${(e && e.message) || e} (오프라인이면 현재 버전으로 계속)` });
+        evalNews();
         return status;
       })
       .finally(() => {
@@ -260,6 +301,7 @@ function createUpdater({ app, root, engine, bundledApp, log, onStatus, isWindowV
 
   function start() {
     cleanup();
+    evalNews(); // 설치 직후 실행: 서버 확인을 기다리지 않고 바로(엔진과 프로그램 버전이 맞을 때)
     setTimeout(() => check(), FIRST_CHECK_MS);
     timer = setInterval(() => check(), CHECK_EVERY_MS);
   }
@@ -268,7 +310,7 @@ function createUpdater({ app, root, engine, bundledApp, log, onStatus, isWindowV
     timer = null;
   }
 
-  return { check, install, maybeInstall, applyPending, start, stop, status: () => status };
+  return { check, install, maybeInstall, applyPending, start, stop, status: () => status, history, evalNews };
 }
 
 module.exports = { createUpdater };

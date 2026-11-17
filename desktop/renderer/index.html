@@ -17,15 +17,12 @@
     </div>
   </header>
 
+  <!-- 새 버전이 있을 때만: 버튼 줄 위, 왼쪽 끝 = 다음 버전 · 오른쪽 끝 = [설치] -->
   <div id="updateBar" class="updatebar hidden">
-    <div class="ub-head">
-      <span id="ubMsg"></span>
-      <div class="ub-actions">
-        <button id="ubInstall" class="btn small hidden">지금 설치</button>
-        <button id="ubToggle" class="iconbtn" title="변경 내용">▾</button>
-      </div>
-    </div>
-    <div id="ubNotes" class="ub-notes hidden"></div>
+    <span id="ubVer" class="ub-ver"></span>
+    <span id="ubMsg" class="ub-msg"></span>
+    <span class="nav-sp"></span>
+    <button id="ubInstall" class="btn small hidden">설치</button>
   </div>
   <div id="prepBar" class="prepbar hidden"></div>
 
@@ -50,36 +47,7 @@
   <!-- 정보 패널 -->
   <section id="info" class="info hidden">
     <h3>설정</h3>
-    <p class="hint">모든 도면에 공통으로 적용되는 값만 둡니다. 저장하면 <b>다음 작업부터</b> 적용됩니다.</p>
-    <div class="setgrp">
-      <h4>골조 모델링 실행 범위 — 어디까지 진행하고 저장할지</h4>
-      <div class="segrow">
-        <div class="seg" id="setStage">
-          <button type="button" data-v="1">1단계까지</button>
-          <button type="button" data-v="2">2단계까지</button>
-          <button type="button" data-v="3">3단계까지</button>
-        </div>
-        <span class="seg-desc" id="setStageDesc"></span>
-      </div>
-    </div>
-    <div class="setgrp" id="setBeamGrp">
-      <h4>보(BEAM)</h4>
-      <label class="chk"><input type="checkbox" id="optBeams" /> 2단계에서 보 생성 <span class="hint inline">(끄면 거더만 생성: BEAM·BEAM(GEN) 레이어와 MGT 보 요소 없음)</span></label>
-      <div id="beamNums" class="nums">
-        <label><span>보를 두는 기준 거더 길이</span><input type="number" data-key="보_기준_거더길이" min="100" step="100" inputmode="numeric" /><em>mm</em><i class="dflt"></i></label>
-        <label><span>보를 두는 최소 베이 폭</span><input type="number" data-key="보_베이폭_최소" min="100" step="100" inputmode="numeric" /><em>mm</em><i class="dflt"></i></label>
-        <label><span>보 2개(3등분) 기준 베이 폭</span><input type="number" data-key="보_베이폭_2개" min="100" step="100" inputmode="numeric" /><em>mm</em><i class="dflt"></i></label>
-        <label><span>보 3개(4등분) 기준 베이 폭</span><input type="number" data-key="보_베이폭_3개" min="100" step="100" inputmode="numeric" /><em>mm</em><i class="dflt"></i></label>
-        <p class="hint">베이 폭 D 가 기준 거더 길이보다 길면 거더와 평행한 보를 D/2 에 1개, 2개 기준 이상이면 D/3 마다 2개, 3개 기준 이상이면 3개 둡니다.</p>
-      </div>
-    </div>
-    <div class="setgrp" id="setMgtGrp">
-      <h4>MIDAS GEN MGT (3단계)</h4>
-      <div class="nums">
-        <label><span>층고(층 높이)</span><input type="number" data-key="MGT_층고" min="100" step="100" inputmode="numeric" /><em>mm</em><i class="dflt"></i></label>
-        <p class="hint">모든 층에 같은 층고를 적용합니다. 도면 N 층의 기둥·벽은 N 층 바닥부터 층고만큼, 그 위 거더·보는 층고 높이에 놓입니다.</p>
-      </div>
-    </div>
+    <p class="hint">구조 검토에 쓰는 값입니다. 저장하면 <b>다음 검토부터</b> 적용됩니다. 골조 모델링 값(실행 범위·보·층고)은 <b>+ 골조 모델링</b> 으로 도면을 고른 뒤 작업마다 정합니다.</p>
     <div class="setgrp" id="setChkGrp">
       <h4>구조 검토 — MIDAS GEN 해석 결과로 기둥·거더·보 검토 (KDS 14 20 강도설계법)</h4>
       <p class="hint">위의 <b>+ 구조 검토</b> 를 누르고, 수작업을 마친 MIDAS 모델(.mgt)과 그 모델을 <b>해석</b>한 결과 테이블(Beam Force)을 Export to Excel 로 저장한 파일(.xls) 두 개를 넣으면 바로 검토합니다(두 파일을 창에 함께 끌어 놓아도 됩니다. 골조 모델링 없이 단독 실행). 콘크리트 강도는 모델의 재료 등급(C27·C30·C35 등)을 우선 쓰고, 등급이 없을 때만 아래 fck 값을 씁니다. 아래 값은 검토 시작값이며, NG 부재는 <b>철근 → 폭 → 춤</b> 순으로 추천합니다. 철근은 <b>개수-직경</b>(예 4-D22), 띠철근·스터럽은 <b>직경@간격</b>(예 D10@200)으로 적습니다.</p>
@@ -119,6 +87,7 @@
     <h3 class="sub">정보</h3>
     <div class="row gap">
       <button id="btnUpdate" class="btn ghost small">업데이트 확인</button>
+      <button id="btnHistory" class="btn ghost small" title="버전별 업데이트 내용">업데이트 내역</button>
       <span id="updMsg" class="msg"></span>
     </div>
     <div class="row gap"><button id="btnData" class="btn ghost small">데이터 폴더 열기</button></div>
@@ -132,6 +101,14 @@
       <h3 id="modalTitle"></h3>
       <p id="modalBody"></p>
       <div class="modal-acts"><button id="modalCancel" class="btn ghost">취소</button><button id="modalOk" class="btn">확인</button></div>
+    </div>
+  </div>
+  <!-- 업데이트 내용(설치 후 처음 한 번) · 업데이트 내역(설정) -->
+  <div id="notesModal" class="modal hidden">
+    <div id="nmBox" class="nm-box" role="dialog" aria-modal="true" aria-labelledby="nmTitle">
+      <div class="nm-head"><h3 id="nmTitle"></h3><span id="nmVer" class="nm-ver"></span><span id="nmSub" class="nm-sub"></span><span class="nav-sp"></span><button id="nmClose" class="nm-x" aria-label="닫기" title="닫기">✕</button></div>
+      <div id="nmBody" class="nm-body"></div>
+      <div id="nmFoot" class="nm-foot"></div>
     </div>
   </div>
   <script src="classify.js"></script>

@@ -32,6 +32,33 @@ def zipdir(src, dst, prefix=""):
                 p = os.path.join(r, f); z.write(p, prefix + os.path.relpath(p, src))
 
 
+def changelog_entries(ver=None, date=None, notes=None, md_path=None):
+    """버전별 업데이트 내역(최신 먼저) = [{"version","date","items"}] — app/changelog.json 으로 넣어 프로그램의 업데이트 내용 팝업·설정의 [업데이트 내역] 이 읽는다.
+    CHANGELOG.md(## v버전 (날짜) / - 항목)를 읽고, 같은 버전이 두 번 있으면 나중 것을 쓴다. latest.json 의 notes 에 있는 버전은 그쪽 글을 쓴다
+    (사용자에게 보이는 글이라 화면 용어로 고쳐 둔 쪽 — CHANGELOG.md 에는 '카드' 같은 옛 표현이 남아 있음). ver 를 주면 이번 배포분을 맨 위에 넣는다."""
+    import re
+    md_path = md_path or os.path.join(SRC, "CHANGELOG.md")
+    latest_p = os.path.join(SRC, "latest.json")
+    by = {}
+    cur = None
+    if os.path.exists(md_path):
+        for line in open(md_path, encoding="utf-8-sig").read().splitlines():
+            m = re.match(r"^##\s+v?(\d+(?:\.\d+)*)\s*(?:\((.*?)\))?\s*$", line)
+            if m:
+                cur = {"version": m.group(1), "date": m.group(2) or "", "items": []}
+                by[cur["version"]] = cur
+            elif cur is not None and line.startswith("- ") and line[2:].strip():
+                cur["items"].append(line[2:].strip())
+    if os.path.exists(latest_p):
+        for n in json.load(open(latest_p, encoding="utf-8")).get("notes", []):
+            if n.get("version") and n.get("items"):
+                by[str(n["version"])] = {"version": str(n["version"]), "date": n.get("date") or "", "items": list(n["items"])}
+    if ver:
+        by[ver] = {"version": ver, "date": date or "", "items": list(notes or [])}
+    key = lambda e: [int(x) for x in e["version"].split(".")]
+    return sorted((e for e in by.values() if e["items"]), key=key, reverse=True)
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     flags = {a for a in sys.argv[1:] if a.startswith("--")}
@@ -62,6 +89,8 @@ def main():
     shutil.copy2(os.path.join(SRC, "config.json"), os.path.join(APP, "config.default.json"))
     open(os.path.join(APP, "version.txt"), "w", encoding="utf-8").write(ver)
     open(os.path.join(APP, "update_source.txt"), "w", encoding="utf-8").write(f"https://raw.githubusercontent.com/{repo}/main/latest.json")
+    date = time.strftime("%Y-%m-%d")
+    json.dump(changelog_entries(ver, date, notes), open(os.path.join(APP, "changelog.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)  # 버전별 업데이트 내역(1.9)
     sec_p = os.path.join(HERE, "secrets.json")  # 피드백 서버 주소(git 제외) → app/feedback_server.txt. 키는 pull_feedback 전용이라 앱에 넣지 않음
     if os.path.exists(sec_p):
         sec = json.load(open(sec_p, encoding="utf-8"))
@@ -77,7 +106,6 @@ def main():
     app_zip = os.path.join(OUT, "app.zip"); zipdir(APP, app_zip)
     print(f"app.zip {os.path.getsize(app_zip)/1e3:.0f} KB")
     # 4. latest.json / CHANGELOG
-    date = time.strftime("%Y-%m-%d")
     latest["app_version"] = ver
     latest["app_url"] = f"https://github.com/{repo}/releases/download/app-v{ver}/app.zip"
     latest["notes"] = [{"version": ver, "date": date, "items": notes}] + [n for n in latest.get("notes", []) if n.get("version") != ver]

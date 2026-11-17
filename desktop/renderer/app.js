@@ -27,29 +27,31 @@ function setPart(sel, html) {
   return true;
 }
 
-// ---- 확인 팝업([취소] [확인])
+// ---- 확인 팝업([취소] [확인]). 오른쪽 버튼 = true, 왼쪽 버튼 = false, 바깥을 누르거나 Esc = null(아무것도 하지 않음)
 let modalDone = null;
-function confirmBox(title, body) {
-  if (modalDone) modalDone(false);
+function confirmBox(title, body, opt = {}) {
+  if (modalDone) modalDone(null);
   return new Promise((resolve) => {
     $('#modalTitle').textContent = title;
     $('#modalBody').textContent = body || '';
+    $('#modalOk').textContent = opt.ok || '확인';
+    $('#modalCancel').textContent = opt.cancel || '취소';
     $('#modal').classList.remove('hidden');
     modalDone = (v) => {
       modalDone = null;
       $('#modal').classList.add('hidden');
       resolve(v);
     };
-    $('#modalCancel').focus();
+    (opt.focusOk ? $('#modalOk') : $('#modalCancel')).focus();
   });
 }
 $('#modalOk').addEventListener('click', () => modalDone && modalDone(true));
 $('#modalCancel').addEventListener('click', () => modalDone && modalDone(false));
 $('#modal').addEventListener('mousedown', (e) => {
-  if (e.target === $('#modal') && modalDone) modalDone(false);
+  if (e.target === $('#modal') && modalDone) modalDone(null);
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && modalDone) modalDone(false);
+  if (e.key === 'Escape' && modalDone) modalDone(null);
 });
 
 // ---- 창 버튼
@@ -61,7 +63,7 @@ btnPin.addEventListener('click', async () => {
   btnPin.classList.toggle('on', on);
 });
 
-// ---- 화면: jobs(작업 목록 + 작업 결과) / review([+ 구조 검토]: 파일 두 개 넣기) / general([피드백]: 작업 없이 보내는 피드백) / log([피드백 로그]) / settings(⚙)
+// ---- 화면: jobs(작업 목록 + 작업 결과) / cond([+ 골조 모델링] 으로 도면을 고른 뒤: 모델링 조건 입력) / review([+ 구조 검토]: 파일 두 개 넣기) / general([피드백]: 작업 없이 보내는 피드백) / log([피드백 로그]) / settings(⚙)
 let view = 'jobs';
 const rv = { table: null, msg: null }; // [+ 구조 검토] 화면: 먼저 넣은 결과표(모델이 오면 함께 검토 시작)·안내 글
 let state = { jobs: [], running: false };
@@ -74,11 +76,19 @@ const gen = { text: '', kind: 'rule', sending: false, msg: null }; // 작업 없
 let logItems = [];
 let logSel = -1;
 
-/** 작업 없이 쓰던 피드백이 있으면 확인 팝업. 취소하면 false */
+/** 지금 화면을 떠나도 되는지: 작업 없이 쓰던 피드백 = 삭제 확인 / 저장하지 않은 설정 = 저장할지 확인 / 조건 입력 = 그냥 닫음. 머무르면 false */
 async function leaveGeneral() {
-  if (view !== 'general' || !gen.text.trim()) return true;
-  if (!(await confirmBox('작성 중이던 피드백이 삭제됩니다', '다른 화면으로 이동하면 적어 둔 내용이 사라집니다.'))) return false;
-  gen.text = '';
+  if (view === 'general' && gen.text.trim()) {
+    if (!(await confirmBox('작성 중이던 피드백이 삭제됩니다', '다른 화면으로 이동하면 적어 둔 내용이 사라집니다.'))) return false;
+    gen.text = '';
+  }
+  if (view === 'settings' && settingsDirty()) {
+    const r = await confirmBox('바꾼 설정을 저장하지 않았습니다', '저장하지 않고 나가면 바꾼 값은 적용되지 않습니다.', { ok: '저장하고 나가기', cancel: '저장하지 않고 나가기', focusOk: true });
+    if (r === null) return false;
+    if (r === true && !(await saveSettings())) return false;
+  }
+  if (view === 'settings') settingsSnap = '';
+  if (view === 'cond') cd = null;
   return true;
 }
 async function setView(v) {
@@ -107,8 +117,11 @@ $('#btnUpdate').addEventListener('click', () => api.updateCheck());
 
 // ---- Nav
 $('#btnStart').addEventListener('click', async () => {
-  if (await setView('jobs')) api.startJob();
+  const f = await api.startJob(); // 도면 1개 고르기 → 조건 입력 화면(값을 확인한 뒤 [모델링 시작])
+  if (f) takeItems([f]);
 });
+api.on('open-model', () => $('#btnStart').click());
+api.on('open-files', (items) => takeItems(items));
 // 구조 검토: 파일 두 개(MIDAS 모델·해석 결과표)를 넣는 화면. 두 파일이 모이면 바로 검토(창에 함께 끌어다 놓아도 같음)
 $('#btnS4').addEventListener('click', () => {
   rv.msg = null;
@@ -150,19 +163,17 @@ divider.addEventListener('pointerdown', (e) => {
   divider.addEventListener('pointercancel', up);
 });
 
-// ---- 설정(골조 모델링 실행 범위 / 보 생성 / 보 간격 기준 / 구조 검토): userData/config.json 에 저장, 다음 작업부터 적용
+// ---- 설정(구조 검토 값만): userData/config.json 에 저장, 다음 검토부터 적용.
+//      골조 모델링 값(실행 범위·보 생성·보 수치·층고)은 설정이 아니라 작업마다 조건 입력 화면에서 정한다(1.9.0)
 let settingDefaults = {};
-let stageSel = 3;
+let settingsSnap = ''; // 설정 화면을 열었을 때(또는 저장한 직후)의 값 — 저장하지 않고 나가는지 판단
 const STAGE_DESC = { 1: '골조·중심선·OPEN 추출 후 DXF 저장', 2: '거더·보 생성 후 DXF 저장', 3: 'MIDAS GEN MGT 까지 생성 (기본)' };
-function setStage(v) {
-  stageSel = [1, 2, 3].includes(Number(v)) ? Number(v) : 3;
-  for (const b of $('#setStage').querySelectorAll('button')) b.classList.toggle('on', Number(b.dataset.v) === stageSel);
-  $('#setStageDesc').textContent = STAGE_DESC[stageSel];
-  settingsVisibility();
-}
+const numInputs = () => [...document.querySelectorAll('#info .nums input[data-key]')];
+const textInputs = () => [...document.querySelectorAll('#info .texts input[data-key], #info .texts select[data-key]')];
+const rawSettings = () => JSON.stringify([...numInputs(), ...textInputs()].map((i) => [i.dataset.key, String(i.value).trim()]));
+const settingsDirty = () => settingsSnap !== '' && rawSettings() !== settingsSnap;
 function fillSettings({ values, defaults }) {
   settingDefaults = defaults || {};
-  $('#optBeams').checked = Boolean(values['보_생성']);
   for (const inp of numInputs()) {
     inp.value = values[inp.dataset.key] ?? '';
     inp.classList.remove('changed');
@@ -175,10 +186,8 @@ function fillSettings({ values, defaults }) {
     const keys = [...inp.closest('label').querySelectorAll('[data-key]')].map((x) => x.dataset.key); // 상부/하부 같은 쌍은 둘 다 표시
     if (d) d.textContent = inp.tagName === 'SELECT' ? '' : `기본 ${keys.map((k) => settingDefaults[k] ?? '-').join(' / ')}`;
   }
-  setStage(values['실행_단계'] || 3);
+  settingsSnap = rawSettings();
 }
-const numInputs = () => [...document.querySelectorAll('#info .nums input[data-key]')];
-const textInputs = () => [...document.querySelectorAll('#info .texts input[data-key], #info .texts select[data-key]')];
 const isShown = (el) => !el.closest('.hidden');
 const TEXT_RE = { bars: /^\d{1,2}-D\d{2}$/, stir: /^D\d{2}@\d{2,3}$/, list: /^D\d{2}(\s*,\s*D\d{2})*$/, combo: /^[\d.\s+\-*DLdl;,]+$/ };
 const TEXT_HINT = { bars: '개수-직경 (예 4-D22)', stir: '직경@간격 (예 D10@200)', list: 'D13,D16,… 쉼표로', combo: '예 1.4D; 1.2D+1.6L' };
@@ -192,26 +201,17 @@ function textOk(i) {
   const v = i.value.trim();
   return v !== '' && (!re || re.test(v));
 }
-function settingsVisibility() {
-  $('#setBeamGrp').classList.toggle('hidden', stageSel < 2); // 1단계까지만이면 보 설정은 의미 없음
-  $('#beamNums').classList.toggle('hidden', !$('#optBeams').checked); // 보를 끄면 간격 옵션 숨김
-  $('#setMgtGrp').classList.toggle('hidden', stageSel < 3); // MGT 를 만들지 않으면 층고 설정 숨김
-  // 구조 검토 설정은 항상 표시 — 구조 검토는 골조 모델링과 무관하게 모델 MGT 로 단독 실행
-}
 function readSettings() {
-  const vals = { 실행_단계: stageSel, 보_생성: $('#optBeams').checked };
+  const vals = {};
   for (const inp of numInputs()) if (numOk(inp)) vals[inp.dataset.key] = Number(inp.value);
   for (const inp of textInputs()) if (textOk(inp)) vals[inp.dataset.key] = inp.value.trim();
   return vals;
 }
-$('#setStage').addEventListener('click', (e) => {
-  const b = e.target.closest('button[data-v]');
-  if (b) setStage(b.dataset.v);
-});
-$('#optBeams').addEventListener('change', settingsVisibility);
+/** 숫자 칸: 숫자만 받는다(소수 허용 칸은 점 1개) */
+const digitsOnly = (inp) => (inp.dataset.dec ? inp.value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1') : inp.value.replace(/[^\d]/g, ''));
 for (const inp of numInputs()) {
   inp.addEventListener('input', () => {
-    inp.value = inp.dataset.dec ? inp.value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1') : inp.value.replace(/[^\d]/g, ''); // 숫자만(소수 허용 칸은 점 1개)
+    inp.value = digitsOnly(inp);
     inp.classList.toggle('changed', Number(inp.value) !== Number(settingDefaults[inp.dataset.key]));
   });
 }
@@ -221,7 +221,8 @@ for (const inp of textInputs()) {
     inp.classList.toggle('bad', !textOk(inp));
   });
 }
-$('#setSave').addEventListener('click', async () => {
+/** 설정 저장. 잘못 적은 칸이 있으면 저장하지 않고 false */
+async function saveSettings() {
   const m = $('#setMsg');
   const badN = numInputs().filter((i) => isShown(i) && !numOk(i)); // 보이는 칸만 검사
   if (badN.length) {
@@ -229,7 +230,7 @@ $('#setSave').addEventListener('click', async () => {
     m.textContent = `${i.closest('label').querySelector('span').textContent}: ${i.min}${i.max ? `~${i.max}` : ' 이상'} 숫자를 입력해 주세요`;
     m.className = 'msg err';
     i.focus();
-    return;
+    return false;
   }
   const badT = textInputs().filter((i) => isShown(i) && !textOk(i));
   if (badT.length) {
@@ -237,16 +238,19 @@ $('#setSave').addEventListener('click', async () => {
     m.textContent = `${i.closest('label').querySelector('span').textContent}: ${TEXT_HINT[i.dataset.re] || '값을 입력해 주세요'}`;
     m.className = 'msg err';
     i.focus();
-    return;
+    return false;
   }
   const r = await api.setSettings(readSettings());
   fillSettings(r);
-  m.textContent = r.rejected && r.rejected.length ? `저장됨 — 일부 값은 범위 밖이라 유지됨 (${r.rejected.join(', ')})` : '저장됨 — 다음 작업(구조 검토는 다음 검토)부터 적용';
+  m.textContent = r.rejected && r.rejected.length ? `저장됨 — 일부 값은 범위 밖이라 유지됨 (${r.rejected.join(', ')})` : '저장됨 — 다음 검토부터 적용';
   m.className = 'msg ok';
-});
+  return true;
+}
+$('#setSave').addEventListener('click', () => saveSettings());
 $('#setReset').addEventListener('click', async () => {
   if (!(await confirmBox('모든 내용을 기본으로 되돌립니다', '설정의 모든 값이 처음 상태로 바뀝니다.'))) return;
-  fillSettings(await api.setSettings({ ...settingDefaults }));
+  const keys = [...numInputs(), ...textInputs()].map((i) => i.dataset.key); // 이 화면에 있는 값만(골조 모델링 값은 건드리지 않음)
+  fillSettings(await api.setSettings(Object.fromEntries(keys.map((k) => [k, settingDefaults[k]]))));
   $('#setMsg').textContent = '기본값으로 되돌림';
   $('#setMsg').className = 'msg ok';
 });
@@ -256,6 +260,121 @@ function optsLabel(o) {
   if (o.stage && o.stage < 3) p.push(`${o.stage}단계까지`);
   if (o.beams === false && o.stage !== 1) p.push('보 없음');
   return p.join(' · ');
+}
+
+/** 이 작업에 적용된 모델링 값(진행 중·결과 화면의 칩) */
+function condChips(c) {
+  const st = Number(c['실행_단계']) || 3;
+  const cs = [`${st}단계까지`];
+  if (st >= 2) {
+    if (c['보_생성']) cs.push('보 생성', `기준 거더 ${c['보_기준_거더길이']}`, `최소 베이 ${c['보_베이폭_최소']}`, `2개 ${c['보_베이폭_2개']}`, `3개 ${c['보_베이폭_3개']}`);
+    else cs.push('보 없음');
+  }
+  if (st >= 3) cs.push(`층고 ${c['MGT_층고']}`);
+  return `<div class="chips cond-chips" title="이 작업에 적용된 값">${cs.map((x) => `<span class="chip2">${esc(x)}</span>`).join('')}</div>`;
+}
+
+// ---- 골조 모델링 조건 입력: 도면을 고르면(파일 선택·끌어 놓기·[값 바꿔 다시 모델링]) 이 화면에서 값을 확인하고 [모델링 시작].
+//      처음 값 = 앞 작업에 쓴 값(없으면 전에 설정에 저장해 둔 값). 처음 값과 달라진 칸은 노란 테두리.
+let cd = null; // {file:{path,name}, base, defaults, note, seq, at}
+let cdSeq = 0;
+const COND_NUMS = [
+  ['보_기준_거더길이', '보를 두는 기준 거더 길이'],
+  ['보_베이폭_최소', '보를 두는 최소 베이 폭'],
+  ['보_베이폭_2개', '보 2개(3등분) 기준 베이 폭'],
+  ['보_베이폭_3개', '보 3개(4등분) 기준 베이 폭'],
+];
+async function openCond(file, fromJob) {
+  if (!(await leaveGeneral())) return;
+  const d = await api.condDefaults();
+  let base = d.values;
+  let note = d.from === 'job' ? '앞 작업에 쓴 값으로 채워 두었습니다.' : d.from === 'settings' ? '전에 설정에 저장해 둔 값으로 채워 두었습니다.' : '기본값으로 채워 두었습니다.';
+  if (fromJob) {
+    const o = fromJob.opts || {};
+    base = { ...d.values, ...(fromJob.cond || { 실행_단계: o.stage || 3, 보_생성: o.beams !== false }) };
+    note = `${fmtDate(fromJob.ended || fromJob.started).slice(11)} 작업의 값에서 시작합니다. 바꾼 칸은 노란 테두리로 표시됩니다.`;
+  }
+  cd = { file: { path: file.path, name: file.name }, base, defaults: d.defaults, note, seq: ++cdSeq, at: Date.now() };
+  view = 'cond';
+  render();
+}
+function renderCond() {
+  const c = cd;
+  const b = c.base;
+  const numL = (k, label) => `<label><span>${label}</span><input type="number" data-key="${k}" min="100" step="100" inputmode="numeric" value="${esc(b[k])}" /><em>mm</em><i class="dflt">기본 ${esc(c.defaults[k] ?? '-')}</i></label>`;
+  const html = `<div data-cond="${c.seq}">
+    <h2 class="d-name" title="${esc(c.file.path)}">${esc(c.file.name)}</h2>
+    <div class="d-status running">모델링 조건 — 값을 확인하고 [모델링 시작] 을 누르면 실행합니다</div>
+    <div class="setgrp"><h4>실행 범위 — 어디까지 진행하고 저장할지</h4><div class="segrow"><div class="seg" id="cdStage">${[1, 2, 3].map((v) => `<button type="button" data-v="${v}">${v}단계까지</button>`).join('')}</div><span class="seg-desc" id="cdStageDesc"></span></div></div>
+    <div class="setgrp" id="cdBeamGrp"><h4>보(BEAM)</h4><label class="chk"><input type="checkbox" id="cdBeams"${b['보_생성'] ? ' checked' : ''} /> 2단계에서 보 생성 <span class="hint inline">(끄면 거더만 생성)</span></label>
+      <div id="cdBeamNums" class="nums">${COND_NUMS.map(([k, l]) => numL(k, l)).join('')}</div></div>
+    <div class="setgrp" id="cdMgtGrp"><h4>MIDAS GEN MGT (3단계)</h4><div class="nums">${numL('MGT_층고', '층고(층 높이)')}</div></div>
+    <div class="cond-foot"><button class="btn" data-act="cd-start">모델링 시작</button><button class="btn ghost" data-act="cd-cancel">취소</button><span class="msg" id="cdMsg">${esc(c.note)}</span></div>
+  </div>`;
+  if (setPart('#dTop', html)) bindCond();
+  setPart('#dFb', '');
+}
+function bindCond() {
+  const el = $('#dTop');
+  const base = cd.base;
+  let stage = [1, 2, 3].includes(Number(base['실행_단계'])) ? Number(base['실행_단계']) : 3;
+  const beams = el.querySelector('#cdBeams');
+  const sync = () => {
+    for (const bt of el.querySelectorAll('#cdStage button')) {
+      bt.classList.toggle('on', Number(bt.dataset.v) === stage);
+      bt.classList.toggle('changed', Number(bt.dataset.v) === stage && stage !== Number(base['실행_단계']));
+    }
+    el.querySelector('#cdStageDesc').textContent = STAGE_DESC[stage];
+    el.querySelector('#cdBeamGrp').classList.toggle('hidden', stage < 2); // 1단계까지만이면 보 값은 의미 없음
+    el.querySelector('#cdBeamNums').classList.toggle('hidden', !beams.checked); // 보를 끄면 수치 숨김
+    el.querySelector('#cdMgtGrp').classList.toggle('hidden', stage < 3); // MGT 를 만들지 않으면 층고 숨김
+  };
+  el.querySelector('#cdStage').addEventListener('click', (e) => {
+    const bt = e.target.closest('button[data-v]');
+    if (!bt) return;
+    stage = Number(bt.dataset.v);
+    sync();
+  });
+  beams.addEventListener('change', sync);
+  const say = (t, cls = '') => {
+    const m = el.querySelector('#cdMsg');
+    m.textContent = t;
+    m.className = `msg ${cls}`;
+  };
+  for (const inp of el.querySelectorAll('.nums input[data-key]')) {
+    inp.addEventListener('input', () => {
+      inp.value = digitsOnly(inp);
+      inp.classList.toggle('changed', Number(inp.value) !== Number(base[inp.dataset.key]));
+    });
+  }
+  el.querySelector('[data-act=cd-cancel]').addEventListener('click', () => {
+    cd = null;
+    view = 'jobs';
+    render();
+  });
+  el.querySelector('[data-act=cd-start]').addEventListener('click', async (e) => {
+    const vals = { 실행_단계: stage, 보_생성: beams.checked };
+    for (const inp of el.querySelectorAll('.nums input[data-key]')) {
+      if (numOk(inp)) vals[inp.dataset.key] = Number(inp.value);
+      else if (isShown(inp)) {
+        say(`${inp.closest('label').querySelector('span').textContent}: ${inp.min} 이상 숫자를 입력해 주세요`, 'err');
+        inp.focus();
+        return;
+      } else vals[inp.dataset.key] = base[inp.dataset.key]; // 숨긴 칸은 처음 값 그대로
+    }
+    e.target.disabled = true;
+    const r = await api.run(cd.file.path, vals);
+    if (!r.ok) {
+      e.target.disabled = false;
+      say(r.message || '시작하지 못했습니다', 'err');
+      return;
+    }
+    cd = null;
+    view = 'jobs';
+    selected = r.id;
+    render();
+  });
+  sync();
 }
 
 // ---- 파일 넣기(끌어다 놓기·파일 선택 공통): 도면 = 골조 모델링, MIDAS 모델·해석 결과표 = 구조 검토.
@@ -271,12 +390,7 @@ async function takeItems(items) {
   const models = items.filter((i) => i.kind === 'model');
   const tables = items.filter((i) => i.kind === 'table');
   const drawings = items.filter((i) => i.kind === 'drawing');
-  if (drawings.length && !models.length && !tables.length) {
-    if (!(await setView('jobs'))) return;
-    const id = await api.run([drawings[0].path]);
-    if (id) selected = id;
-    return;
-  }
+  if (drawings.length && !models.length && !tables.length) return openCond(drawings[0]);
   if (drawings.length) return reviewSay('도면과 구조 검토 파일을 함께 넣을 수 없습니다. 도면은 [+ 골조 모델링] 으로, MIDAS 모델과 해석 결과표는 여기에 넣어 주세요.');
   if (models.length > 1) return reviewSay('MIDAS 모델은 한 번에 1개만 넣을 수 있습니다.');
   if (tables.length > 1) return reviewSay('해석 결과표는 한 번에 1개만 넣을 수 있습니다.');
@@ -326,7 +440,8 @@ api.on('engine-state', (st) => {
   const fresh = st.jobs.find((j) => !prevIds.has(j.id));
   if (fresh) {
     selected = fresh.id;
-    if (view !== 'jobs' && !(view === 'general' && gen.text.trim())) view = 'jobs'; // 새 작업이 생기면 그 작업 화면으로(작업 없이 쓰던 피드백이 있으면 그대로 둠)
+    const keep = (view === 'general' && gen.text.trim()) || view === 'cond' || (view === 'settings' && settingsDirty());
+    if (view !== 'jobs' && !keep) view = 'jobs'; // 새 작업이 생기면 그 작업 화면으로(쓰던 피드백·조건 입력·저장하지 않은 설정이 있으면 그대로 둠)
   }
   render();
 });
@@ -359,10 +474,12 @@ function render() {
     renderLog();
     return;
   }
+  if (view === 'cond' && !cd) view = 'jobs';
   if (state.jobs.length && !state.jobs.some((j) => j.id === selected)) selected = state.jobs[state.jobs.length - 1].id;
   renderList();
   if (view === 'general') renderGeneral();
   else if (view === 'review') renderReview();
+  else if (view === 'cond' && cd) renderCond();
   else renderDetail(state.jobs.find((j) => j.id === selected));
 }
 
@@ -383,17 +500,30 @@ function listState(j) {
   return { text: '결과표 넣기 대기', cls: 'done' }; // 넣은 파일이 결과표가 아니었던 경우도 실패가 아니라 다시 넣기를 기다림
 }
 const jobTime = (j) => (j.stage4 && j.stage4.ended) || j.ended || j.started || j.created || 0;
+/** 목록 상태 줄 맨 오른쪽 태그(11-18 사용자 지시): [전송하기]·[건너뛰기] 를 누르지 않은 작업은 서버에 남지 않으므로 눈에 띄게 한다.
+ *  끝까지 마친 작업(= [건너뛰기] 가 나오는 작업)에만 붙인다 — 미완료 = 빨강, 전송했거나 건너뛴 작업 = 초록 */
+function fbTag(j) {
+  const done = Boolean(j.feedback && (j.feedback.sent || j.feedback.skipped));
+  if (!done && !canSkip(j)) return '';
+  return `<span class="ji-fb ${done ? 'ok' : 'no'}">${done ? '피드백 완료' : '피드백 미완료'}</span>`;
+}
 function renderList() {
+  // 아직 작업이 아닌 조건 입력 화면은 목록 맨 위에 한 줄로 보여 준다.
+  // [+ 구조 검토] 를 누른 화면은 목록에 줄을 만들지 않는다(11-18 사용자 지시): 오른쪽 화면만 바뀌고 목록은 아무것도 선택되지 않은 상태
+  const pseudo =
+    view === 'cond' && cd
+      ? `<li class="jobitem running sel pseudo"><div class="ji-date">${esc(fmtDate(cd.at))}</div><div class="ji-name" title="${esc(cd.file.path)}">${esc(cd.file.name)}</div><div class="ji-state">조건 입력 중</div></li>`
+      : '';
   if (!state.jobs.length) {
-    setPart('#jobList', '<li class="none">작업이 없습니다</li>');
+    setPart('#jobList', pseudo || '<li class="none">작업이 없습니다</li>');
     return;
   }
-  const html = [...state.jobs]
+  const html = pseudo + [...state.jobs]
     .reverse()
     .map((j) => {
       const st = listState(j);
       const ol = j.kind === 's4' ? '' : optsLabel(j.opts);
-      return `<li class="jobitem ${st.cls}${view === 'jobs' && j.id === selected ? ' sel' : ''}" data-id="${j.id}"><div class="ji-date">${esc(fmtDate(jobTime(j)) || '-')}</div><div class="ji-name" title="${esc(j.src)}">${esc(j.name)}</div><div class="ji-state" title="${esc(st.text)}">${esc(st.text)}${ol ? `<span class="ji-opts">${esc(ol)}</span>` : ''}</div>${j.state !== 'running' ? '<button class="ji-del" title="목록에서 지우기">✕</button>' : ''}</li>`;
+      return `<li class="jobitem ${st.cls}${view === 'jobs' && j.id === selected ? ' sel' : ''}" data-id="${j.id}"><div class="ji-date">${esc(fmtDate(jobTime(j)) || '-')}</div><div class="ji-name" title="${esc(j.src)}">${esc(j.name)}</div><div class="ji-state"><span class="ji-st" title="${esc(st.text)}">${esc(st.text)}${ol ? `<span class="ji-opts">${esc(ol)}</span>` : ''}</span>${fbTag(j)}</div>${j.state !== 'running' ? '<button class="ji-del" title="목록에서 지우기">✕</button>' : ''}</li>`;
     })
     .join('');
   setPart('#jobList', html);
@@ -456,7 +586,8 @@ function topHtml(j) {
   const errKind = j.state === 'failed' && j.failKind !== 'input';
   return `<div data-job="${j.id}">
     <h2 class="d-name" title="${esc(j.src)}">${esc(j.name)}</h2>
-    <div class="d-status ${j.state}${errKind ? ' error' : ''}">${esc(status)}${optsLabel(j.opts) ? `<span class="d-opts" title="이 작업에 적용된 설정">${esc(optsLabel(j.opts))}</span>` : ''}</div>
+    <div class="d-status ${j.state}${errKind ? ' error' : ''}">${esc(status)}${!j.cond && optsLabel(j.opts) ? `<span class="d-opts" title="이 작업에 적용된 설정">${esc(optsLabel(j.opts))}</span>` : ''}</div>
+    ${!s4k && j.cond ? condChips(j.cond) : ''}
     ${j.state === 'running' || j.state === 'queued' ? `<div class="bar"><i style="width:${pct}%"></i></div><pre class="d-tail">${esc((j.tail || []).slice(-5).join('\n'))}</pre><div class="row"><button class="btn small danger" data-act="cancel">작업 취소</button></div>` : ''}
     ${
       j.state === 'failed'
@@ -467,7 +598,7 @@ function topHtml(j) {
         : ''
     }
     ${j.state === 'done' && s4k ? renderModel(j) : ''}
-    ${j.state === 'done' && !s4k ? `<div class="row gap"><button class="btn" data-act="download">⬇ 결과 DXF</button>${j.mgt ? `<button class="btn" data-act="download-mgt">⬇ MIDAS GEN (MGT)</button>` : ''}<span class="hint">${esc(j.result ? j.result.split(/[\\/]/).pop() : '')}</span></div>` : ''}
+    ${j.state === 'done' && !s4k ? `<div class="row gap"><button class="btn" data-act="download">⬇ 결과 DXF</button>${j.mgt ? `<button class="btn" data-act="download-mgt">⬇ MIDAS GEN (MGT)</button>` : ''}<button class="btn ghost" data-act="rerun">값 바꿔 다시 모델링</button></div><p class="hint">${esc(j.result ? j.result.split(/[\\/]/).pop() : '')}</p>` : ''}
     ${j.state === 'done' ? renderStage4(j) : ''}
   </div>`;
 }
@@ -486,6 +617,7 @@ function renderDetail(j) {
 function bindTop(j) {
   const el = $('#dTop');
   el.querySelector('[data-act=cancel]')?.addEventListener('click', () => api.cancel());
+  el.querySelector('[data-act=rerun]')?.addEventListener('click', () => openCond({ path: j.src, name: j.name }, j));
   // 구조 검토: 결과표 첨부 → 검토 / 엑셀·수정 MGT 다운로드 / 승인
   const s4msg = (t, cls = '') => {
     const m = el.querySelector('.s4 .s4-msg');
@@ -797,35 +929,95 @@ function renderStage4(j) {
   return `<section class="s4"><h3>구조 검토 <span class="chip">MIDAS 해석 결과 → KDS 14 20</span></h3>${body}<span class="s4-msg msg"></span></section>`;
 }
 
-// ---- 업데이트 띠
+// ---- 업데이트: 버튼 줄 위 설치 줄(왼쪽 끝 = 다음 버전, 오른쪽 끝 = [설치]) · 설치 후 처음 한 번 뜨는 업데이트 내용 팝업 · 설정의 [업데이트 내역]
 const ub = $('#updateBar');
-let notesOpen = false;
-$('#ubToggle').addEventListener('click', () => {
-  notesOpen = !notesOpen;
-  $('#ubNotes').classList.toggle('hidden', !notesOpen);
-  $('#ubToggle').textContent = notesOpen ? '▴' : '▾';
-});
+let lastUpd = null;
 $('#ubInstall').addEventListener('click', () => api.updateInstall());
 function renderUpdate(s) {
   if (!s) return;
-  const show = ['downloading', 'ready', 'updated', 'installing', 'error'].includes(s.state);
-  ub.classList.toggle('hidden', !show);
-  ub.classList.toggle('good', s.state === 'updated');
+  lastUpd = s;
+  const err = s.state === 'error' && !s.next;
+  ub.classList.toggle('hidden', !(s.next || err));
   ub.classList.toggle('bad', s.state === 'error');
-  let msg = s.message || '';
-  if (s.state === 'downloading' && s.progress) msg += ` (${Math.round(s.progress * 100)}%)`;
+  $('#ubVer').textContent = s.next ? `새 버전 v${s.next}` : '';
+  let msg = '';
+  if (s.state === 'downloading') msg = `내려받는 중${s.progress ? ` (${Math.round(s.progress * 100)}%)` : ''}`;
+  else if (s.state === 'installing') msg = '설치 중 — 잠시 후 다시 실행됩니다';
+  else if (s.state === 'error' || /작업이 끝나면|개발 실행/.test(s.message || '')) msg = s.message || '';
   $('#ubMsg').textContent = msg;
-  $('#ubInstall').classList.toggle('hidden', !(s.state === 'ready' && /설치 준비됨/.test(msg)));
-  const notes = s.notes || [];
-  $('#ubToggle').classList.toggle('hidden', !notes.length);
-  $('#ubNotes').innerHTML = notes
-    .map((n) => `<h4>v${esc(n.version)} <span class="chip">${esc(n.date || '')}</span></h4><ul>${(n.items || []).map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`)
-    .join('');
-  if (['downloading', 'updated', 'ready'].includes(s.state) && notes.length && !notesOpen) $('#ubToggle').click();
+  $('#ubMsg').title = msg;
+  // [설치] 는 새 프로그램(설치본)이 있을 때만. 다 내려받기 전과 설치 중에는 누를 수 없다
+  $('#ubInstall').classList.toggle('hidden', !s.shell);
+  $('#ubInstall').disabled = !s.canInstall || s.state === 'installing';
   $('#updMsg').textContent = s.message || '';
   $('#updMsg').className = 'msg ' + (s.state === 'error' ? 'err' : s.state === 'uptodate' || s.state === 'updated' ? 'ok' : '');
   if (s.current) $('#verChip').textContent = `v${s.current.app}`;
+  if (s.whatsNew && !nm) openNews(s.whatsNew);
 }
+
+/** 업데이트 내용 팝업·업데이트 내역 창. nm = { mode: 'news', entry } | { mode: 'history', list, open: Set } | null */
+let nm = null;
+const noteItems = (n) => `<ul>${(n.items || []).map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`;
+function openNews(entry) {
+  nm = { mode: 'news', entry };
+  $('#nmBox').classList.remove('wide');
+  $('#nmTitle').textContent = '업데이트 내용';
+  $('#nmVer').textContent = `v${entry.version}`;
+  $('#nmVer').classList.remove('hidden');
+  $('#nmSub').textContent = entry.date || '';
+  $('#nmBody').className = 'nm-body';
+  $('#nmBody').innerHTML = noteItems(entry);
+  $('#nmFoot').textContent = '지난 버전의 내용은 설정(⚙)의 [업데이트 내역] 에서 볼 수 있습니다.';
+  $('#nmFoot').classList.remove('hidden');
+  $('#notesModal').classList.remove('hidden');
+  $('#nmClose').focus();
+}
+function renderHistory() {
+  const cur = lastUpd && lastUpd.current ? String(lastUpd.current.app) : '';
+  $('#nmBody').innerHTML = nm.list.length
+    ? nm.list
+        .map((n) => {
+          const on = nm.open.has(n.version);
+          return `<div class="nm-row"><button class="nm-rh" data-ver="${esc(n.version)}" aria-expanded="${on}"><span class="tw">${on ? '▾' : '▸'}</span><b>v${esc(n.version)}</b><span class="nm-sub">${esc(n.date || '')}</span>${String(n.version) === cur ? '<span class="cur">현재 버전</span>' : ''}<span class="nav-sp"></span><span class="n">${(n.items || []).length}건</span></button>${on ? `<div class="nm-rb">${noteItems(n)}</div>` : ''}</div>`;
+        })
+        .join('')
+    : '<p class="hint" style="padding:14px 18px">업데이트 내역이 없습니다.</p>';
+}
+async function openHistory() {
+  const list = (await api.updateHistory()) || [];
+  nm = { mode: 'history', list, open: new Set(list.length ? [list[0].version] : []) };
+  $('#nmBox').classList.add('wide');
+  $('#nmTitle').textContent = '업데이트 내역';
+  $('#nmVer').classList.add('hidden');
+  $('#nmSub').textContent = '버전을 누르면 내용이 펼쳐집니다';
+  $('#nmBody').className = 'nm-body list';
+  $('#nmFoot').classList.add('hidden');
+  renderHistory();
+  $('#notesModal').classList.remove('hidden');
+  $('#nmClose').focus();
+}
+async function closeNotes() {
+  const was = nm;
+  nm = null;
+  $('#notesModal').classList.add('hidden');
+  if (was && was.mode === 'news') await api.newsSeen(was.entry.version); // [✕] 로 닫으면 이 버전은 다시 띄우지 않는다
+  else if (lastUpd && lastUpd.whatsNew) openNews(lastUpd.whatsNew); // 내역을 보는 동안 미뤄 둔 업데이트 내용
+}
+$('#nmClose').addEventListener('click', closeNotes);
+$('#nmBody').addEventListener('click', (e) => {
+  const b = e.target.closest('.nm-rh');
+  if (!b || !nm || nm.mode !== 'history') return;
+  const v = b.dataset.ver;
+  if (nm.open.has(v)) nm.open.delete(v);
+  else nm.open.add(v);
+  const top = $('#nmBody').scrollTop;
+  renderHistory();
+  $('#nmBody').scrollTop = top;
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && nm && nm.mode === 'history') closeNotes(); // 업데이트 내용 팝업은 [✕] 로만 닫는다
+});
+$('#btnHistory').addEventListener('click', openHistory);
 api.on('update-status', renderUpdate);
 api.updateStatus().then(renderUpdate);
 

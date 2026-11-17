@@ -1,13 +1,14 @@
 'use strict';
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
-const CHANNELS = ['engine-state', 'update-status', 'install-progress', 'feedback-progress', 'open-feedback', 'open-review'];
+const CHANNELS = ['engine-state', 'update-status', 'install-progress', 'feedback-progress', 'open-feedback', 'open-review', 'open-model', 'open-files'];
 
 contextBridge.exposeInMainWorld('girder', {
   pathOf: (file) => webUtils.getPathForFile(file),
   startJob: () => ipcRenderer.invoke('start-job'),
   startStage4: () => ipcRenderer.invoke('start-stage4'),
-  run: (paths) => ipcRenderer.invoke('run', paths),
+  run: (file, cond) => ipcRenderer.invoke('run', file, cond),
+  condDefaults: () => ipcRenderer.invoke('cond-defaults'),
   describeFiles: (paths) => ipcRenderer.invoke('describe-files', paths),
   reviewPick: (want) => ipcRenderer.invoke('review-pick', want),
   reviewStart: (model, table) => ipcRenderer.invoke('review-start', model, table),
@@ -32,6 +33,8 @@ contextBridge.exposeInMainWorld('girder', {
   updateCheck: () => ipcRenderer.invoke('update-check'),
   updateStatus: () => ipcRenderer.invoke('update-status'),
   updateInstall: () => ipcRenderer.invoke('update-install'),
+  updateHistory: () => ipcRenderer.invoke('update-history'),
+  newsSeen: (ver) => ipcRenderer.invoke('news-seen', ver),
   versions: () => ipcRenderer.invoke('versions'),
   getPinned: () => ipcRenderer.invoke('get-pinned'),
   setPinned: (on) => ipcRenderer.invoke('set-pinned', on),

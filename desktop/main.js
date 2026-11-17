@@ -32,11 +32,12 @@ function log(...args) {
   }
   if (!app.isPackaged) console.log(line);
 }
+let firstRun = false; // settings.json 이 없던 첫 실행(새로 설치)
 function loadSettings() {
   try {
     settings = { ...settings, ...JSON.parse(fs.readFileSync(SETTINGS, 'utf8')) };
   } catch {
-    /* 첫 실행 */
+    firstRun = true;
   }
 }
 function saveSettings() {
@@ -53,7 +54,10 @@ if (!gotLock) {
 } else {
   app.on('second-instance', (_e, argv) => {
     const files = fileArgs(argv);
-    if (files.length && engine) engine.enqueue(files.slice(0, 1));
+    if (files.length && engine) {
+      showWindow();
+      send('open-files', engine.describe(files.slice(0, 2))); // 도면이면 조건 입력 화면, 모델·결과표면 구조 검토
+    }
     if (!argv.includes('--hidden')) showWindow();
   });
 }
@@ -119,7 +123,13 @@ function showWindow() {
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
     { label: '열기', click: () => showWindow() },
-    { label: '골조 모델링…', click: () => startJob() },
+    {
+      label: '골조 모델링…',
+      click: () => {
+        showWindow();
+        send('open-model', {});
+      },
+    },
     { label: '구조 검토…', click: () => startStage4() },
     {
       label: '피드백…',
@@ -157,12 +167,12 @@ function setPinned(on) {
   if (tray) tray.setContextMenu(buildTrayMenu());
 }
 
-/** 골조 모델링(1·2·3단계) 시작: 탐색기에서 도면 1개 선택 → 대기열 */
+/** 골조 모델링(1·2·3단계): 탐색기에서 도면 1개 선택 → 고른 파일 정보만 돌려준다(화면이 조건 입력을 받은 뒤 startModel 로 시작) */
 async function startJob() {
   showWindow();
   const r = await dialog.showOpenDialog(mainWindow, { title: '골조 모델링 — 도면 선택 (1개)', filters: [{ name: 'DWG/DXF', extensions: ['dwg', 'dxf'] }], properties: ['openFile'] });
   if (r.canceled || !r.filePaths.length) return null;
-  return engine.enqueue(r.filePaths.slice(0, 1));
+  return engine.describe(r.filePaths.slice(0, 1))[0] || null;
 }
 
 /** 구조 검토 시작(트레이 메뉴): 창을 띄우고 파일 두 개(MIDAS 모델·해석 결과표)를 넣는 화면을 연다 */
@@ -279,7 +289,8 @@ function registerIpc() {
   ipcMain.handle('describe-files', (_e, paths) => engine.describe((paths || []).slice(0, 8)));
   ipcMain.handle('review-pick', (_e, want) => pickReview(want));
   ipcMain.handle('review-start', (_e, model, table) => engine.startReview(model, table));
-  ipcMain.handle('run', (_e, paths) => engine.enqueue((paths || []).slice(0, 1)));
+  ipcMain.handle('run', (_e, file, cond) => engine.startModel(file, cond));
+  ipcMain.handle('cond-defaults', () => engine.condDefaults());
   ipcMain.handle('cancel', () => engine.cancel());
   ipcMain.handle('remove-job', (_e, id) => engine.remove(id));
   ipcMain.handle('engine-state', () => engine.state());
@@ -322,6 +333,16 @@ function registerIpc() {
   ipcMain.handle('update-check', () => updater.check());
   ipcMain.handle('update-status', () => updater.status());
   ipcMain.handle('update-install', () => updater.install({ show: Boolean(mainWindow && mainWindow.isVisible()) }));
+  ipcMain.handle('update-history', () => updater.history());
+  ipcMain.handle('news-seen', (_e, ver) => {
+    // 업데이트 내용 팝업을 [✕] 로 닫음 → 그 버전은 다시 띄우지 않는다(다음 버전을 설치하면 다시 뜸)
+    if (/^\d+(\.\d+)*$/.test(String(ver || ''))) {
+      settings.notesSeen = String(ver);
+      saveSettings();
+    }
+    updater.evalNews();
+    return true;
+  });
   ipcMain.handle('versions', () => ({ ...engine.versions(), shell: app.getVersion(), root: ROOT }));
   ipcMain.handle('get-pinned', () => Boolean(settings.pinned));
   ipcMain.handle('set-pinned', (_e, on) => {
@@ -358,7 +379,14 @@ app.whenReady().then(() => {
     log,
     onStatus: (s) => send('update-status', s),
     isWindowVisible: () => Boolean(mainWindow && mainWindow.isVisible() && !mainWindow.isMinimized()),
+    getSeen: () => settings.notesSeen || '0',
   });
+  // 업데이트 내용 팝업(1.9): 새로 설치한 PC 는 지금 버전을 '본 것'으로 두어 띄우지 않는다. 전부터 쓰던 PC(이 기능 전 버전에서 올라온 경우)는 표시가 없으므로 한 번 뜬다
+  if (!settings.notesSeen && firstRun) {
+    const v = engine.versions().app; // 첫 실행에서는 엔진 폴더를 아직 풀기 전이라 '-' 일 수 있음 → 프로그램 버전
+    settings.notesSeen = /^\d/.test(v) ? v : app.getVersion();
+    saveSettings();
+  }
   migrateFeedbackLog();
   registerIpc();
   createWindow();
@@ -378,7 +406,7 @@ app.whenReady().then(() => {
       for (const j of engine.pendingSamples()) sendSample(j); // 못 보낸 문제 없음 표본 재시도
     }, 15000);
     const files = fileArgs(process.argv);
-    if (files.length) engine.enqueue(files.slice(0, 1));
+    if (files.length) send('open-files', engine.describe(files.slice(0, 2)));
   });
   if (!START_HIDDEN) mainWindow.once('ready-to-show', () => showWindow());
 });

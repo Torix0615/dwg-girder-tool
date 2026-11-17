@@ -231,6 +231,43 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     return { ...getSettings(), rejected, spec: SETTING_SPEC };
   }
 
+  /** 골조 모델링 값(작업마다 정함, 1.9.0): 실행 범위·보 생성·보 수치 4개·층고. 설정 화면이 아니라 도면을 고른 뒤 조건 입력 화면에서 받는다 */
+  const COND_KEYS = ['실행_단계', '보_생성', '보_기준_거더길이', '보_베이폭_최소', '보_베이폭_2개', '보_베이폭_3개', 'MGT_층고'];
+  const condOf = (obj) => Object.fromEntries(COND_KEYS.filter((k) => obj && obj[k] !== undefined).map((k) => [k, obj[k]]));
+  /** 조건 입력 화면에 채워 둘 값: 가장 최근 골조 모델링 작업에 쓴 값 → 없으면 예전에 설정에 저장해 둔 값(없으면 기본값) */
+  function condDefaults() {
+    const st = getSettings();
+    const defaults = condOf(st.defaults);
+    const last = [...jobs].reverse().find((j) => j.kind !== 's4' && j.cond);
+    if (last) return { values: { ...defaults, ...condOf(last.cond) }, defaults, from: 'job', at: last.started || last.created };
+    const saved = { ...defaults, ...condOf(st.values) };
+    return { values: saved, defaults, from: COND_KEYS.some((k) => String(saved[k]) !== String(defaults[k])) ? 'settings' : 'default' };
+  }
+  /** 조건 검증 → {cond} 또는 {bad:[키]}. 빠진 값은 채워 둘 값으로 메운다 */
+  function checkCond(vals) {
+    const base = condDefaults().values;
+    const cond = {};
+    const bad = [];
+    for (const k of COND_KEYS) {
+      if (!vals || vals[k] === undefined) {
+        cond[k] = base[k];
+        continue;
+      }
+      const v = validSetting(k, vals[k]);
+      if (v === undefined) bad.push(k);
+      else cond[k] = v;
+    }
+    return bad.length ? { bad } : { cond };
+  }
+  /** 골조 모델링 시작: 도면 1개 + 이 작업에 쓸 값 */
+  function startModel(file, vals) {
+    if (sniff(file) !== 'drawing') return { ok: false, message: '도면(DWG·DXF) 파일을 찾을 수 없습니다. 파일을 옮겼거나 지웠다면 [+ 골조 모델링] 으로 다시 골라 주세요' };
+    const c = checkCond(vals);
+    if (c.bad) return { ok: false, message: `값을 확인해 주세요: ${c.bad.join(', ')}`, bad: c.bad };
+    const id = enqueue([file], { cond: c.cond });
+    return id ? { ok: true, id } : { ok: false, message: '같은 도면을 이미 모델링하고 있습니다' };
+  }
+
   function publicJob(j) {
     const { log: _l, ...rest } = j;
     return { ...rest, tail: j.log.slice(-8) };
@@ -294,6 +331,7 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
       const id = ++seq;
       const base = path.basename(p, path.extname(p));
       const job = { id, src: p, name: path.basename(p), state: 'queued', step: '', stepIdx: 0, total: 0, created: Date.now(), started: 0, ended: 0, outdir: path.join(RESULTS, `${id}_${base}`), result: null, report: null, message: '', feedback: null, log: [] };
+      if (!s4) job.cond = opts.cond || condDefaults().values; // 이 작업에 쓸 모델링 값(조건 입력 화면에서 받은 값)
       if (s4) {
         job.kind = 's4';
         job.srcMtime = fs.statSync(p).mtimeMs;
@@ -424,14 +462,18 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     current = j;
     j.state = 'running';
     j.started = Date.now();
-    const st = getSettings().values;
-    j.opts = { stage: Number(st['실행_단계']) || 3, beams: Boolean(st['보_생성']) }; // 이 작업에 적용된 실행 범위·보 생성(카드 표시용)
+    if (!j.cond) j.cond = condDefaults().values;
+    const st = j.cond;
+    j.opts = { stage: Number(st['실행_단계']) || 3, beams: Boolean(st['보_생성']) }; // 이 작업에 적용된 실행 범위·보 생성(목록 표시용)
     j.total = (path.extname(j.src).toLowerCase() === '.dwg' ? 1 : 0) + 6 + (j.opts.stage >= 3 ? 1 : 0); // 변환·XREF·전개·1단계·모델·거더보(또는 건너뜀)·DXF·MGT
     j.step = '시작';
     fs.mkdirSync(j.outdir, { recursive: true });
     saveJobs();
     emit();
-    const args = [path.join(APP, 'run_pipeline.py'), j.src, '--out', j.outdir, '--config', CFG];
+    // 작업별 값: 공통 config.json 에 이 작업의 모델링 값을 덮어쓴 사본을 결과 폴더에 두고 그 파일로 실행한다
+    const jobCfg = path.join(j.outdir, 'job_config.json');
+    fs.writeFileSync(jobCfg, JSON.stringify({ ...(readJson(CFG) || {}), ...j.cond }, null, 2) + '\n');
+    const args = [path.join(APP, 'run_pipeline.py'), j.src, '--out', j.outdir, '--config', jobCfg];
     log(`실행: ${j.src}`);
     proc = spawn(PY, args, { cwd: APP, env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' }, windowsHide: true });
     let buf = '';
@@ -721,7 +763,7 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
     return jobs.filter((j) => j.state === 'done' && j.feedback && j.feedback.skipped && !(j.feedback.sample && j.feedback.sample.sent));
   }
 
-  return { enqueue, describe, startReview, cancel, remove, setFeedback, setDraft, setErrorReport, pendingErrorReports, pendingSamples, state, versions, ensureInstalled, ensureConfig, getSettings, setSettings, runStage4, applyStage4, stage4Busy, isIdle: () => !current && !proc4, job: (id) => jobs.find((j) => j.id === id) || null, paths: { APP, RT, CFG, PY, RESULTS }, EXT, MGT_EXT };
+  return { enqueue, describe, startReview, startModel, condDefaults, cancel, remove, setFeedback, setDraft, setErrorReport, pendingErrorReports, pendingSamples, state, versions, ensureInstalled, ensureConfig, getSettings, setSettings, runStage4, applyStage4, stage4Busy, isIdle: () => !current && !proc4, job: (id) => jobs.find((j) => j.id === id) || null, paths: { APP, RT, CFG, PY, RESULTS }, EXT, MGT_EXT };
 }
 
 module.exports = { createEngine, cmpVer, readText, swapDir };
