@@ -1,6 +1,13 @@
 {
  "notes": [
   {
+   "version": "1.9.1",
+   "date": "2026-11-18",
+   "items": [
+    "골조 모델링: \"모델링 조건\" 화면은 항상 기본값으로 채워짐(앞 작업에 쓴 값·전에 설정에 저장해 둔 값을 가져오지 않음). [값 바꿔 다시 모델링] 만 그 작업의 값에서 시작"
+   ]
+  },
+  {
    "version": "1.9.0",
    "date": "2026-11-18",
    "items": [
@@ -191,22 +198,14 @@
     "실행 시작 줄에 버전과 입력 파일명 표시",
     "전체 패키지 zip 이름을 영문(girder-tool_v버전_full.zip)으로"
    ]
-  },
-  {
-   "version": "1.0.0",
-   "date": "2026-10-27",
-   "items": [
-    "첫 배포: 1단계 골조·중심선·OPEN 추출 + 2단계 거더·보 생성(아래층 기둥 기준), 층별 도면 HTML",
-    "실행 시 자동 업데이트, 피드백 zip(피드백_보내기.bat)"
-   ]
   }
  ],
- "app_version": "1.9.0",
- "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.9.0/app.zip",
+ "app_version": "1.9.1",
+ "app_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.9.1/app.zip",
  "runtime_version": "1",
  "runtime_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/runtime-v1/runtime.zip",
- "shell_version": "1.9.0",
- "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.9.0/GirderTool-Setup-1.9.0.exe",
- "shell_sha256": "dcedd5abe55063eb701352255e88d9c6b049cc06ca3b4bac865da37f994edbcf",
- "shell_size": 145857207
+ "shell_version": "1.9.1",
+ "shell_url": "https://github.com/Torix0615/dwg-girder-tool/releases/download/app-v1.9.1/GirderTool-Setup-1.9.1.exe",
+ "shell_sha256": "bc6f58dafcaf743906afa966d48a53cd5aea50677477925deba440688b6fe108",
+ "shell_size": 145857191
 }

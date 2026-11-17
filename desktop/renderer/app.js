@@ -275,7 +275,7 @@ function condChips(c) {
 }
 
 // ---- 골조 모델링 조건 입력: 도면을 고르면(파일 선택·끌어 놓기·[값 바꿔 다시 모델링]) 이 화면에서 값을 확인하고 [모델링 시작].
-//      처음 값 = 앞 작업에 쓴 값(없으면 전에 설정에 저장해 둔 값). 처음 값과 달라진 칸은 노란 테두리.
+//      처음 값 = 항상 기본값([값 바꿔 다시 모델링] 만 그 작업의 값). 처음 값과 달라진 칸은 노란 테두리.
 let cd = null; // {file:{path,name}, base, defaults, note, seq, at}
 let cdSeq = 0;
 const COND_NUMS = [
@@ -288,7 +288,7 @@ async function openCond(file, fromJob) {
   if (!(await leaveGeneral())) return;
   const d = await api.condDefaults();
   let base = d.values;
-  let note = d.from === 'job' ? '앞 작업에 쓴 값으로 채워 두었습니다.' : d.from === 'settings' ? '전에 설정에 저장해 둔 값으로 채워 두었습니다.' : '기본값으로 채워 두었습니다.';
+  let note = '기본값으로 채워 두었습니다.';
   if (fromJob) {
     const o = fromJob.opts || {};
     base = { ...d.values, ...(fromJob.cond || { 실행_단계: o.stage || 3, 보_생성: o.beams !== false }) };

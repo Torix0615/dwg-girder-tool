@@ -234,14 +234,11 @@ function createEngine({ root, bundled, log, onState, onError = null }) {
   /** 골조 모델링 값(작업마다 정함, 1.9.0): 실행 범위·보 생성·보 수치 4개·층고. 설정 화면이 아니라 도면을 고른 뒤 조건 입력 화면에서 받는다 */
   const COND_KEYS = ['실행_단계', '보_생성', '보_기준_거더길이', '보_베이폭_최소', '보_베이폭_2개', '보_베이폭_3개', 'MGT_층고'];
   const condOf = (obj) => Object.fromEntries(COND_KEYS.filter((k) => obj && obj[k] !== undefined).map((k) => [k, obj[k]]));
-  /** 조건 입력 화면에 채워 둘 값: 가장 최근 골조 모델링 작업에 쓴 값 → 없으면 예전에 설정에 저장해 둔 값(없으면 기본값) */
+  /** 조건 입력 화면에 채워 둘 값 = 항상 기본값(11-18 사용자 지시 — 1.9.0 은 앞 작업에 쓴 값·예전에 설정에 저장해 둔 값을 가져왔으나 없앰).
+   *  [값 바꿔 다시 모델링] 만 그 작업의 값에서 시작한다(화면 쪽 openCond) */
   function condDefaults() {
-    const st = getSettings();
-    const defaults = condOf(st.defaults);
-    const last = [...jobs].reverse().find((j) => j.kind !== 's4' && j.cond);
-    if (last) return { values: { ...defaults, ...condOf(last.cond) }, defaults, from: 'job', at: last.started || last.created };
-    const saved = { ...defaults, ...condOf(st.values) };
-    return { values: saved, defaults, from: COND_KEYS.some((k) => String(saved[k]) !== String(defaults[k])) ? 'settings' : 'default' };
+    const defaults = condOf(getSettings().defaults);
+    return { values: { ...defaults }, defaults, from: 'default' };
   }
   /** 조건 검증 → {cond} 또는 {bad:[키]}. 빠진 값은 채워 둘 값으로 메운다 */
   function checkCond(vals) {

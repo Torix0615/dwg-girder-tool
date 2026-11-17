@@ -138,3 +138,10 @@
 - 버전별 내역은 `app/changelog.json`(release.py `changelog_entries` 가 넣음: CHANGELOG.md 전체 + latest.json notes 로 덮어씀 — latest.json 쪽이 '카드' 같은 옛 표현을 화면 용어로 고친 글). latest.json notes 는 20개까지만 남으므로 내역 화면은 이 파일을 읽는다. 없으면 서버 notes.
 - 상태 값: `status.next`(새 버전)·`status.shell`(새 프로그램 버전, [설치] 표시)·`status.canInstall`(다 받았는지)·`status.whatsNew`. 옛 띠의 "변경 내용 펼치기"(ubToggle·ubNotes)는 없앰.
 - 시험: `updater_test19.cjs`(가짜 엔진·가짜 배포 서버, 10항목), 화면 `ui_update19.py`(가짜 배포 서버 `DWG_UPDATE_URL` + 격리 폴더, 19항목), release.py 는 `release.SRC/PKG/APP/OUT` 를 사본·임시 폴더로 바꿔 `--dry`(실제 latest.json·CHANGELOG·pkg 를 안 건드리고 확인).
+
+## 2026-11-18 (v1.9.0 배포)
+- "알아서 배포하고 시험기록 6건 삭제해" 로 진행. 순서: ① 삭제 대상 6건이 시험 기록인지 서버 목록으로 확인(이 PC 이름·kind record·11-18 00:19) → `pull_feedback.py --delete` 6회 → 서버 14건 확인 ② 배포 전 회귀(엔진으로 data/1.dxf 377초·a31/bound.dxf 67초) ③ `release.py 1.9.0 --notes-file=dist_build/out/notes_1.9.0.txt --shell`(로그 `dist_build/out/release_1.9.0.log`) ④ 검증: 릴리스 자산 3개, 설치본 해시(로컬 = latest.json = 릴리스 digest), raw latest.json 1.9.0, app.zip·설치본 엔진 폴더에 changelog.json(20개 버전), asar 에 새 코드 있음·되돌린 자동 기록 코드와 키 없음.
+- 회귀와 배포는 차례로 돌린다: 회귀는 `dist_build/pkg/app` 사본과 runtime 정션을 쓰고, release.py 는 `pkg/app` 을 지우고 다시 만든다.
+- 배포 뒤 확인이 필요한 것(설치본에서만 되는 흐름): 전문가 PC 에서 1.8.0 → 1.9.0 설치 뒤 "업데이트 내용" 팝업이 한 번 뜨는지.
+- 세션 정리(11-18): ① "기록된 리스트만 보여줘" 에 차이(버튼을 누른 작업만 기록됨)를 보고하면서 자동 기록을 다음 단계로 내밀어 구현했다가 같은 날 전부 되돌렸다 — 차이는 보고하고 원하는 동작을 묻는 데서 멈춘다. ② 화면이 바뀌는 기능(업데이트 팝업·내역)은 구현을 시작한 뒤에 "레이아웃 새로 그려내봐" 가 왔다 — 눈에 보이는 변경은 캔버스 프레임이 먼저. ③ 전문가에게 보이는 글(배포 노트·README·팝업)에는 이미 전달된 안내를 다시 넣지 않는다(서버 기록 문구 제거). ④ 격리 시험이 실제 서버로 샌 사고 → 전송 코드에 시험 가드(`testServer`).
+- **모델링 조건은 항상 기본값(11-18, 1.9.1 예정·미배포)** — 사용자 결정 흐름: "이전에 설정한 값을 그대로 가져오면 어때" → (이미 그렇게 동작한다고 답함) → "처음엔 기본값, 이후 앞 작업 값, 목록을 다 지우면 기본값" → 곧바로 "아니다, 기본값 그대로 보여지게 하자". `engine.cjs condDefaults()` 가 앞 작업 값·설정에 저장돼 있던 값을 보지 않고 기본값만 돌려준다([값 바꿔 다시 모델링] 은 화면 쪽 `openCond(file, fromJob)` 이 그 작업 값으로 덮어씀 — 유지). 시험 `engine_dflt191.cjs` 6항목·`ui_dflt191.py` 5항목. 같은 시험에서 전부터 쓰던 폴더(본 표시 없음)에 1.9.0 "업데이트 내용" 팝업이 뜨는 것도 개발 실행으로 확인.
